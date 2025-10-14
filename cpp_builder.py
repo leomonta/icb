@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Building tool for compiling projects source files (maily c/c++)
-# @Author Leonardo Montagner https://github.com/leomonta/Python_cpp_builder
+# @Author Leonardo https://github.com/leomonta/icb
 #
 # Done: retrive include dirs, libs and args from a file
 # Done: compile and link files
@@ -32,7 +32,7 @@
 
 import subprocess # execute command on the cmd / bash / whatever
 import os         # get directories file names
-import json       # parse cpp_builder_config.json
+import json       # parse icb.json
 import hashlib    # for calculating hashes
 import threading  # for threading, duh
 import time       # time.sleep
@@ -76,15 +76,15 @@ TEMPLATE = """{
 }
 """
 
-HELP = """Usage: cpp_builder.py -p PROFILE [OPTION]
-   or: cpp_builder.py [--gen | -e | --help | -h]
+HELP = """Usage: icb -p PROFILE [OPTION]
+   or: icb [--gen | -e | --help | -h]
 
 general options
 
   -a                    rebuild the entire project
   -p <profile-name>     utilize the given profile specifies in the config file
-  -e                    do not compile and export the `cpp_builder_config` as a Makefile
-      --gen             writes in the current directory an empty `cpp_builder_config.json` file
+  -e                    do not compile and export the `icb.json` as a Makefile
+      --gen             writes in the current directory an empty `icb.json` file
   -n <num-of-threads>   number of parallel threads to execute at the same time, default 12, -1 for as many as compilation units
   -h, --help            print this screen
 
@@ -100,7 +100,7 @@ printing options
 	  --no-colors           do not use colors for the output, same for compiler reports
 """
 
-CONFIG_FILENAME = "cpp_builder_config.json"
+CONFIG_FILENAME = "icb.json"
 HASH_FILENAME = "files_hash"
 
 DEFAULT_COMPILER = "gcc"
@@ -526,7 +526,7 @@ def get_includes(file: str) -> list[str]:
 
 def parse_config_json(profile: str) -> dict[str, any]:
 	"""
-	Set the global variables by reading the from cpp_builder_config.json
+	Set the global variables by reading the from icb.json
 	the optimization argument decide if debug or release mode
 	"""
 
