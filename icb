@@ -507,7 +507,7 @@ def multi_thread(func: typing.Callable, ret: list, sem: threading.Semaphore, arg
 	return ret
 
 
-def get_includes(file: str) -> list[str]:
+def get_includes(file: str, options: str) -> list[str]:
 	"""
 	Returns all of the includes included, directly or indirectly, bt the given file
 	"""
@@ -516,7 +516,7 @@ def get_includes(file: str) -> list[str]:
 	# org_path: str = parse_file_path(file)[0]
 
 	# TODO: Think about the MSVC children
-	stream, out, err = cmd("cpp -MM " + file)
+	stream, out, err = cmd("cpp -MM " + file + " -I" + " -I".join(options))
 
 	# long live functional programming innit
 	founds = list(filter(lambda x: x != "\\", out.split()[2:]))
@@ -718,7 +718,7 @@ def parse_config_json(profile: str) -> dict[str, any]:
 	return settings
 
 
-def to_recompile(filename: str, old_hashes: dict, new_hashes: dict) -> bool | str:
+def to_recompile(filename: str, old_hashes: dict, new_hashes: dict, options: str) -> bool | str:
 	"""
 	Given a filename return if it needs to be recompiled
 	A source file needs to be recompiled if it has been modified
@@ -727,7 +727,7 @@ def to_recompile(filename: str, old_hashes: dict, new_hashes: dict) -> bool | st
 	"""
 
 	# get all the includes in one go, and remove any duplicate
-	all_files: list[str] = list(dict.fromkeys(get_includes(filename)))
+	all_files: list[str] = list(dict.fromkeys(get_includes(filename, options)))
 	all_files.insert(0, filename)
 
 	res = False
@@ -824,7 +824,7 @@ def get_to_compile(source_files: list[str], old_hashes: dict, new_hashes: dict, 
 
 		rets.append([False, False])
 
-		threading.Thread(target=multi_thread, args=(to_recompile, rets[-1], sem, (file, old_hashes, new_hashes))).start()
+		threading.Thread(target=multi_thread, args=(to_recompile, rets[-1], sem, (file, old_hashes, new_hashes, add_incl))).start()
 
 	exit = False
 	while not exit:
