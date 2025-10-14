@@ -1,4 +1,4 @@
-# CPP python building tool
+# incremental C Builder
 
 An incremental but simplistic build tool for personal projects
 
@@ -16,7 +16,7 @@ Also, I would like to use this same framework for other OSes (Windows), and comp
 
 ## Modus Operandis: (?)
 
-A config file (`cpp_builder_config.json`) is always needed, even though i might add a simple empty config file in the builder if none is found,
+A config file (`icb.json`) is always needed, even though i might add a simple empty config file in the builder if none is found,
 The config file is a json because: the key helps explain the what the required info is, it is easily edited by people, and it's widely used for everything
 
 Given the source directories (aka the directories containing source files) it attempts to compile all of the file recognized as source files (aka .c, .cpp. c++ ...) 
@@ -216,8 +216,8 @@ general options
 
 	-a                    rebuild the entire project
 	-p <profile-name>     utilize the given profile specifies in the config file
-	-e                    do not compile and export the `cpp_builder_config` as a Makefile
-	--gen                 writes in the current directory an empty `cpp_builder_config.json` file
+	-e                    do not compile and export the `icb.json` as a Makefile
+	--gen                 writes in the current directory an empty `icb.json` file
 	-n <num-of-threads>   number of parallel threads to execute at the same time, default 12, -1 for as many as compilation units
 	-h, --help            print this screen
 
@@ -233,7 +233,7 @@ printing options
 	--no-colors           do not use colors for the output, same for compiler reports
 ```
 
-## the cpp_builder_config.json structure
+## the icb.json structure
 
 ```json
 {
@@ -245,7 +245,7 @@ printing options
 
 	"directories": {
 
-		"project_dir": "project root directory relative to where the cpp_builder is being called",
+		"project_dir": "project root directory relative to where the icb is being called",
 		"exe_path_name": "path and name where to put the final executable",
 		"include_dirs": [
 			"additional include directories to pass to the compiler"
