@@ -23,7 +23,7 @@
 # Done: refactor out global variables (except constants)
 # Done: maximum thread amount to run at the same time
 # Done: default profile to perform default overrides for each other profile
-# TODO: implicit empty configuration if no config file is found
+# Done: implicit empty configuration if no config file is found
 # Done: better argument parsing
 # TODO: use a better tool to get the includes off a file
 # FIXME: the include chain stops on the first modified include, instead of reporting all of them
@@ -60,7 +60,7 @@ TEMPLATE = """{
 		"temp_dir": "obj"
 	},
 
-	"default":
+	"default": {
 		"compiler_args": "-g3",
 		"linker_args": "",
 		"libraries_dirs": [
@@ -69,7 +69,7 @@ TEMPLATE = """{
 		],
 		"scripts": {
 			"pre": "",
-			"post": "",
+			"post": ""
 		}
 
 	}
@@ -429,6 +429,9 @@ def parse_profile_name(args: list[str]) -> str:
 	except IndexError:
 		# default profile
 		return "default"
+	except ValueError:
+		# default profile
+		return "default"
 
 
 def parse_num_threads(args: list[str]) -> int:
@@ -581,14 +584,11 @@ def parse_config_json(profile: str) -> dict[str, any]:
 	}
 
 	# load and parse the file
-	config_filename = "cpp_builder_config.json"
-	if os.path.isfile(config_filename):
-		config_file = json.load(open(config_filename))
+	if os.path.isfile(CONFIG_FILENAME):
+		config_file = json.load(open(CONFIG_FILENAME))
 	else:
-		print(COLS.FG_YELLOW, f"[WARNING]{COLS.FG_LIGHT_RED} Config file \"{config_filename}\" not found", COLS.RESET)
-		return dict
-
-	del config_filename
+		print(COLS.FG_YELLOW, f"[WARNING]{COLS.RESET} Config file \"{CONFIG_FILENAME}\" not found using the default template")
+		config_file = json.loads(TEMPLATE)
 
 	# --- Compiler settings ---
 	# get the compiler executable (gcc, g++, clang, rustc, etc)
@@ -918,11 +918,10 @@ def exe_script(name: str, settings: dict):
 
 def get_all_profiles():
 
-	config_filename = "cpp_builder_config.json"
-	if os.path.isfile(config_filename):
-		config_file = json.load(open(config_filename))
+	if os.path.isfile(CONFIG_FILENAME):
+		config_file = json.load(open(CONFIG_FILENAME))
 	else:
-		print(COLS.FG_YELLOW, f"[WARNING]{COLS.FG_LIGHT_RED} Config file \"{config_filename}\" not found", COLS.RESET)
+		print(COLS.FG_YELLOW, f"[WARNING]{COLS.FG_LIGHT_RED} Config file \"{CONFIG_FILENAME}\" not found", COLS.RESET)
 		return dict
 
 	profiles: list[str] = []
@@ -1071,7 +1070,7 @@ def main():
 
 	# generate an empty profile
 	if "--gen" in args:
-		with open("cpp_builder_config.json", "w") as f:
+		with open(CONFIG_FILENAME, "w") as f:
 			f.write(TEMPLATE)
 		exit(0)
 
@@ -1079,19 +1078,17 @@ def main():
 		print(HELP)
 		exit(0)
 
-	# profile selector
-	if "-p" not in args:
-		print(f"{COLS.FG_RED}You need to specify a profile with '-p'{COLS.RESET}")
-		exit(1)
-
+	# this returns anythin after the -p, is the switch is not set return "default"
 	compilation_profile = parse_profile_name(args)
-
-	indx = args.index("-p")
-	args.pop(indx + 1)
-	args.pop(indx)
 
 	# settings is garanteted to have all of the necessary values
 	settings = parse_config_json(compilation_profile)
+
+	if "-p" in args:
+		indx = args.index("-p")
+		# be mindfull of the order
+		args.pop(indx + 1)
+		args.pop(indx)
 
 	compile_all = False
 
