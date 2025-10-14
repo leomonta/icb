@@ -447,7 +447,7 @@ def parse_num_threads(args: list[str]) -> int:
 
 def parse_file_path(filename: str) -> tuple[str, str, str] | None:
 	# i need to differentiate different parts
-	# extension: to decide if it has to be compiled or not and to name it
+	# extension: to decide if it has to be compiled or not
 	# filename: everything else of the file name ignoring the extension, useful for naming compilitation files
 	# source dir: necessary for differentiate eventual same-named files on different dirs
 
@@ -858,7 +858,7 @@ def compile(to_compile: list[str], settings: dict, compilations: list[dict]) -> 
 	for file in to_compile:
 		obj_name: str = "".join(file[0].split("/"))
 
-		command = f'{cexe} {colors}{cargs}{includes} {oargs["compile_only"]} {oargs["output_compiler"]}{obj_dir}/{obj_name}{file[1]}.{oargs["object_extension"]} {file[0]}/{file[1]}.{file[2]}'
+		command = f'{cexe} {colors}{cargs}{includes} {oargs["compile_only"]} {oargs["output_compiler"]}{obj_dir}/{obj_name}{file[1]}.{file[2]}.{oargs["object_extension"]} {file[0]}/{file[1]}.{file[2]}'
 
 		result = {
 		 "result": COMPILATION_STATUS_COMPILING,
