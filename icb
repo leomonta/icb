@@ -916,13 +916,13 @@ def exe_script(name: str, settings: dict):
 	print_report([result], settings)
 
 
-def get_all_profiles():
+def get_all_profiles_names() -> list[str]:
 
 	if os.path.isfile(CONFIG_FILENAME):
 		config_file = json.load(open(CONFIG_FILENAME))
 	else:
-		print(COLS.FG_YELLOW, f"[WARNING]{COLS.FG_LIGHT_RED} Config file \"{CONFIG_FILENAME}\" not found", COLS.RESET)
-		return dict
+		print(COLS.FG_YELLOW, f"[WARNING]{COLS.RESET} Config file \"{CONFIG_FILENAME}\" not found using the default template")
+		config_file = json.loads(TEMPLATE)
 
 	profiles: list[str] = []
 
@@ -933,35 +933,37 @@ def get_all_profiles():
 	return profiles
 
 
+def sanitize_makefile(text: str) -> str:
+	return text.replace('"', '\\"')
+
+
 def create_makefile():
 
-	profiles = get_all_profiles()
+	profile_names = get_all_profiles_names()
 
-	if len(profiles) == 0:
-		print(f"{COLS.FG_RED}At least one profile is needed in the config_file, but none found{COLS.RESET}")
+	if len(profile_names) == 0:
+		print(f"{COLS.FG_RED}[ERROR]{COLS.RESET} At least one profile is needed in the config_file, but none found")
 
-	# first debug options
-	settings = parse_config_json(profiles[0])
+	# any profile is fine for the non rofile specific settings
+	generic_settings = parse_config_json(profile_names[0])
 
-	# targets
-	os.chdir(settings["project_path"])
+	os.chdir(generic_settings["project_path"])
 
-	# obtain new hashes
+	# I use the normal pipeline to get all the files to compile, but I use an empty dict to simulate a clean compilation
 	hashes: dict = {}
-
 	calculate_new_hashes({}, hashes)
 
 	# get the file needed to compile
-	to_compile = get_to_compile(settings["source_files"], {}, hashes, settings["raw_includes"], settings["semaphore"])
+	to_compile = get_to_compile(generic_settings["source_files"], {}, hashes, generic_settings["raw_includes"], generic_settings["semaphore"])
 
 	make_file = ""
 
 	# variables
 
-	make_file += f"CC       = {settings['compiler']}\n"
-	make_file += f"BINNAME  = {settings['exe_path_name']}\n"
-	make_file += f"OBJSDIR  = {settings['objects_path']}\n"
-	make_file += f"INCLUDES = {settings['includes']}\n"
+	make_file += f"CC       = {generic_settings['compiler']}\n"
+	make_file += f"BINNAME  = {generic_settings['exe_path_name']}\n"
+	make_file += f"OBJSDIR  = {generic_settings['objects_path']}\n"
+	make_file += f"INCLUDES ={generic_settings['includes']}\n"
 	make_file += "PROFILE  = \n"
 	make_file += "CARGS    = \n"
 
@@ -969,7 +971,7 @@ def create_makefile():
 
 	make_file += "OBJS = \\\n"
 	for file in to_compile:
-		obj_name: str = "".join(file[0].split("/")) + file[1]
+		obj_name: str = "".join(file[0].split("/")) + file[1] + "." + file[2]
 		make_file += f"	$(OBJSDIR)/$(PROFILE)/{obj_name}.o \\\n"
 
 	make_file += "\n"
@@ -977,7 +979,7 @@ def create_makefile():
 	make_file += "SOURCES = \\\n"
 	for file in to_compile:
 		obj_name: str = "".join(file[0].split("/")) + file[1]
-		make_file += f"	{file[0]}/{file[1]} \\\n"
+		make_file += f"	{file[0]}/{file[1]}.{file[2]} \\\n"
 
 	make_file += "\n\n"
 
@@ -986,7 +988,7 @@ def create_makefile():
 	make_file += "\n"
 
 	make_file += "$(SOURCES):\n"
-	make_file += "	$(CC) $@.cpp $(CARGS) $(INCLUDES) -c -o $(OBJSDIR)/$(PROFILE)/$(subst /,,$@).o\n"
+	make_file += "	$(CC) $@ $(CARGS) $(INCLUDES) -c -o $(OBJSDIR)/$(PROFILE)/$(subst /,,$@).o\n"
 
 	make_file += "\n\n"
 
@@ -996,23 +998,23 @@ def create_makefile():
 
 	scripts_used: list[str] = []
 
-	for prof in profiles:
+	for prof in profile_names:
 		PROF = prof.upper()
 
-		settings = parse_config_json(prof)
+		generic_settings = parse_config_json(prof)
 
 		# Profiles
 		make_file += f"# --- {prof} ---\n"
 		make_file += "\n"
-		make_file += f"{PROF}-CARGS    = {settings['cargs']}\n"
-		make_file += f"{PROF}-LARGS    = {settings['largs']}\n"
-		make_file += f"{PROF}-LIBPATH  = {settings['libraries_paths']}\n"
-		make_file += f"{PROF}-LIBNAMES = {settings['libraries_names']}\n"
+		make_file += f"{PROF}-CARGS    ={sanitize_makefile(generic_settings['cargs'])}\n"
+		make_file += f"{PROF}-LARGS    ={sanitize_makefile(generic_settings['largs'])}\n"
+		make_file += f"{PROF}-LIBPATH  ={sanitize_makefile(generic_settings['libraries_paths'])}\n"
+		make_file += f"{PROF}-LIBNAMES ={sanitize_makefile(generic_settings['libraries_names'])}\n"
 		make_file += "\n\n"
 
-		make_file += f"{prof}-link: PROFILE = {prof}\n"
-		make_file += f"{prof}-link: CARGS = $({PROF}-CARGS)\n"
-		make_file += f"{prof}-link: $(SOURCES)\n"
+		make_file += f"{PROF}-LINK: PROFILE = {prof}\n"
+		make_file += f"{PROF}-LINK: CARGS = $({PROF}-CARGS)\n"
+		make_file += f"{PROF}-LINK: $(SOURCES)\n"
 		make_file += f"	$(CC) $({PROF}-LARGS) -o $(BINNAME) $({PROF}-LIBPATH) $(OBJS) $({PROF}-LIBNAMES)\n"
 
 		make_file += "\n"
@@ -1020,21 +1022,21 @@ def create_makefile():
 		pre_rule = ""
 		post_rule = ""
 
-		if settings["scripts"]["pre"] != "":
-			pre_rule = "{prof}-pre "
+		if generic_settings["scripts"]["pre"] != "":
+			pre_rule = f"{PROF}-PRE "
 			scripts_used.append(pre_rule)
-			make_file += f"{prof}-pre:\n"
-			make_file += f"	./{settings['scripts']['pre']}\n"
+			make_file += f"{PROF}-PRE:\n"
+			make_file += f"	./{generic_settings['scripts']['pre']}\n"
 			make_file += "\n"
 
-		if settings["scripts"]["post"] != "":
-			post_rule = f"{prof}-post"
+		if generic_settings["scripts"]["post"] != "":
+			post_rule = f" {PROF}-POST"
 			scripts_used.append(post_rule)
-			make_file += f"{prof}-post:\n"
-			make_file += f"	./{settings['scripts']['post']}\n"
+			make_file += f"{PROF}-POST:\n"
+			make_file += f"	./{generic_settings['scripts']['post']}\n"
 			make_file += "\n"
 
-		make_file += f"{prof}: | {pre_rule}{prof}-link {post_rule}\n"
+		make_file += f"{prof}: | {pre_rule}{PROF}-LINK{post_rule}\n"
 
 		make_file += "\n"
 
