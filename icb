@@ -76,7 +76,7 @@ TEMPLATE = """{
 }
 """
 
-HELP = """Usage: icb -p PROFILE [OPTION]
+HELP = """Usage: icb [-p PROFILE] [OPTION]
    or: icb [--gen | -e | --help | -h]
 
 general options
@@ -409,7 +409,7 @@ def compile_and_command(compilation_targets: list[str], settings: dict) -> None:
 	}
 
 	# Link starts a thread, no need to check anything from him
-	link(compilation_targets, settings, link_status)
+	link(settings, link_status)
 
 	print_progress([link_status], settings)
 
@@ -811,7 +811,7 @@ def save_new_hashes(new_hashes: dict[str, str], directory: str) -> None:
 
 def get_to_compile(source_files: list[str], old_hashes: dict, new_hashes: dict, add_incl: list[str], sem: threading.Semaphore) -> list[str]:
 	"""
-	return a list of files and their directories that need to be compiled
+	return a list of files and their directories that need might to be compiled
 	"""
 
 	to_compile: list[tuple[str, str, str]] = [] # contains directory and filename
@@ -874,7 +874,7 @@ def compile(to_compile: list[str], settings: dict, compilations: list[dict]) -> 
 		threading.Thread(target=exe_command, args=(command, result, settings["semaphore"])).start()
 
 
-def link(to_compile: list[str], settings: dict, status: dict) -> None:
+def link(settings: dict, status: dict) -> None:
 	"""
 	Link together all the files that have been compiled with the specified libraries and arguments
 	"""
