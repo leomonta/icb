@@ -674,6 +674,9 @@ def parse_config_json(profile: str) -> dict[str, any]:
 
 	default_settings = merge(EMPTY_PROFILE, get_value(config_file, "default", {}))
 
+	if profile not in config_file:
+		print(f"{COLS.FG_YELLOW}[WARNING]{COLS.RESET} profile '{profile}' not found, using default.")
+
 	profile_settings = merge(default_settings, get_value(config_file, profile, {}))
 
 	# --- Scripts settings ---
@@ -1086,6 +1089,7 @@ def main():
 	# settings is garanteted to have all of the necessary values
 	settings = parse_config_json(compilation_profile)
 
+	# need to remove it else the next for loop will see it and recognize it
 	if "-p" in args:
 		indx = args.index("-p")
 		# be mindfull of the order
