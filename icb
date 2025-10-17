@@ -237,44 +237,96 @@ PROGRRESS_PREFIXES: list[str] = ["|", "+", "-"]
 PROGRESS_STATUS: list[str] = [f"{COLS.FG_BLUE}Processing", f"{COLS.FG_GREEN}Done", f"{COLS.FG_RED}Failed"]
 
 
+def parse_array(v: str):
+	op = v.find("[")
+	cl = v.find("]")
+	elems: list[str] = v[op + 1:cl].split(",")
+	res = []
+	for e in elems:
+		s = e.strip()
+		if s != "":
+			res.append(s)
+	return res
+
+
+def post_process(sett: dict[str, str]) -> dict[str, str]:
+	for k, v in sett.items():
+		if isinstance(v, dict):
+			sett[k] = post_process(v)
+		elif "[" in v and "]" in v:
+			sett[k] = parse_array(v)
+	return sett
+
+
 def load_yaml(file: str) -> dict[str, str]:
 	start = 0
-	end = -1
-	return load_recursive(file, start, end, [0])
+	r, s = load_recursive(file, start, -1)
+	return post_process(r)
 
 
 def get_indentation(snippet: str):
 	for i in range(0, len(snippet)):
 		if not snippet[i].isspace():
-			break
-		else:
 			return i
+	return 0
 
 
-def load_recursive(file: str, start: int, end: int, indents: list[int]) -> dict[str, str]:
+def load_recursive(file: str, start: int, prev_indent: int) -> (dict[str, str], int):
 	res: dict = {}
 	while True:
-		if get_indentation(file[newline + 1:nn]):
 
+		newline = 0
 
-		colon = file.find(":", start, end)
+		try:
+			newline = file.find("\n", start)
+		except ValueError:
+			return res, -1
 
-		key = file[start:colon]
+		if newline == -1:
+			return res, -1
 
-		newline = file.find("\n", colon, end)
+		line = file[start:newline]
 
-		value = file[colon + 1:newline]
+		# empty line
+		if line.strip() == "":
+			start = newline + 1
+			continue
 
-		if value.isspace() or value == "":
-			nn = file.index("\n", newline, end)
-			indent = get_indentation(file[newline + 1:nn])
-			res[key] = load_recursive(file, start, end, [indent])
+		# did the indentation change?
+		curr_indent = get_indentation(file[start:newline])
+
+		# we went back to a previous indentation
+		if curr_indent <= prev_indent:
+			break
+
+		colon = file.find(":", start, newline)
+
+		# array
+		if colon == -1:
+			open_br = file.find("[", start)
+			clos_br = file.find("]", start)
+			value = file[open_br:clos_br + 1]
+			newline = file.find("\n", clos_br)
+			return value, newline + 1
+		else:
+			key = file[start:colon].strip()
+			value = file[colon + 1:newline].strip()
+
+		# the next value is an object or an array
+		if value == "":
+			ret = load_recursive(file, newline + 1, curr_indent)
+			res[key] = ret[0]
+			if ret[1] < 0:
+				return res, -1
+			# o continue from where the recursion left off
+			start = ret[1]
+			continue
 		else:
 			res[key] = value
 
-		print(file[:colon], file[colon + 1:newline])
+		start = newline + 1
 
-	return res
+	return res, start
 
 
 def merge(a: dict, b: dict) -> dict:
@@ -625,7 +677,7 @@ def parse_config_json(profile: str) -> dict[str, any]:
 
 	# load and parse the file
 	if os.path.isfile(CONFIG_FILENAME):
-		print(load_yaml(open("icb.yaml").read()))
+		cfg = load_yaml(open("icb.yaml").read())
 		config_file = json.load(open(CONFIG_FILENAME))
 	else:
 		print(COLS.FG_YELLOW, f"[WARNING]{COLS.RESET} Config file \"{CONFIG_FILENAME}\" not found using the default template")
