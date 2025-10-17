@@ -26,6 +26,7 @@
 # Done: implicit empty configuration if no config file is found
 # Done: better argument parsing
 # TODO: use a better tool to get the includes off a file
+# TODO: implement static and dynamic compilation targets
 # FIXME: the include chain stops on the first modified include, instead of reporting all of them
 # FIXME: exported makefile does not rely on the default profile
 # FIXME: the makefile prevent make from detecting if the source files have been modified
@@ -43,6 +44,7 @@ import typing     # for callable
 
 TEMPLATE = """{
 	"compiler": {
+		"target": "exe",
 		"compiler_style": "gcc",
 		"compiler_exe": "gcc",
 		"linker_exe": "ld"
@@ -364,7 +366,6 @@ def get_compilation_status(item: dict[str], tick: int = 0) -> str:
 
 	curr_spinner = SPINNERS[tick % len(SPINNERS)]
 
-	print
 	prefix: str = " " + PROGRRESS_PREFIXES[item["result"]] + " "
 	suffix: str = " " + PROGRESS_STATUS[item["result"]]
 
@@ -599,16 +600,16 @@ def multi_thread(func: typing.Callable, ret: list, sem: threading.Semaphore, arg
 	return ret
 
 
-def get_includes(file: str, options: str) -> list[str]:
+def get_includes(file: str, full_args: dict) -> list[str]:
 	"""
-	Returns all of the includes included, directly or indirectly, bt the given file
+	Returns all of the includes included, directly or indirectly, by the given file
 	"""
 
 	founds: list[str] = []
 	# org_path: str = parse_file_path(file)[0]
 
 	# TODO: Think about the MSVC children
-	stream, out, err = cmd("cpp -MM " + file + " -I" + " -I".join(options))
+	stream, out, err = cmd(f"cpp -MM{full_args} {file}")
 
 	# long live functional programming innit
 	founds = list(filter(lambda x: x != "\\", out.split()[2:]))
@@ -623,6 +624,9 @@ def parse_config_json(profile: str) -> dict[str, any]:
 	"""
 
 	settings: dict[str, any] = {
+	                                          # the final product of the compilation an executable a static library or a dynamic one
+	 "target": "exe",
+
 	                                          # type of compiler gcc like or rust like generally
 	 "type": "gcc",
 
@@ -645,9 +649,6 @@ def parse_config_json(profile: str) -> dict[str, any]:
 
 	                                          # the string composed by the path of the includes -> "-I./include -I./ext/include -I..."
 	 "includes": "",
-
-	                                          # list of all the includes as they appear in the config file
-	 "raw_includes": [],
 
 	                                          # directory where to leave the compiled object files
 	 "objects_path": "",
@@ -741,7 +742,7 @@ def parse_config_json(profile: str) -> dict[str, any]:
 
 	os.chdir(old_dir)
 
-	del old_dir, path, subdirs, files, name, sdir
+	del old_dir, path, subdirs, files, sdir
 
 	settings["source_files"] = targets
 
@@ -753,7 +754,6 @@ def parse_config_json(profile: str) -> dict[str, any]:
 
 	# create the includes args -> -IInclude -ISomelibrary/include -I...
 	for Idir in get_value(directories_settings, "include_dirs", ["include"]):
-		settings["raw_includes"].append(Idir)
 		settings["includes"] += " " + settings["specifics"]["include_path"] + Idir
 
 	settings["objects_path"] = get_value(directories_settings, "temp_dir", "obj")
@@ -764,6 +764,9 @@ def parse_config_json(profile: str) -> dict[str, any]:
 	#
 	# ----- Profiles -----
 	#
+
+	if profile not in config_file:
+		print(COLS.FG_YELLOW, f"[WARNING]{COLS.FG_LIGHT_RED} Specified profile not found, using default empty profile.", COLS.RESET)
 
 	default_settings = merge(EMPTY_PROFILE, get_value(config_file, "default", {}))
 
@@ -814,17 +817,16 @@ def parse_config_json(profile: str) -> dict[str, any]:
 	return settings
 
 
-def to_recompile(filename: str, old_hashes: dict, new_hashes: dict, options: str) -> bool | str:
+def to_recompile(filename: str, old_hashes: dict, new_hashes: dict, full_args: dict) -> bool | str:
 	"""
 	Given a filename return if it needs to be recompiled
 	A source file needs to be recompiled if it has been modified
 
-	returns the filename is the file needs to be recompiled, false otherwise
+	returns the filename if the file needs to be recompiled, false otherwise
 	"""
 
 	# get all the includes in one go, and remove any duplicate
-	all_files: list[str] = list(dict.fromkeys(get_includes(filename, options)))
-	all_files.insert(0, filename)
+	all_files: list[str] = list(dict.fromkeys(get_includes(filename, full_args)))
 
 	res = False
 
@@ -902,7 +904,7 @@ def save_new_hashes(new_hashes: dict[str, str], directory: str) -> None:
 			f.write(new_hashes[i] + "\n")
 
 
-def get_to_compile(source_files: list[str], old_hashes: dict, new_hashes: dict, add_incl: list[str], sem: threading.Semaphore) -> list[str]:
+def get_to_compile(source_files: list[str], old_hashes: dict, new_hashes: dict, sem: threading.Semaphore, full_args: dict) -> list[str]:
 	"""
 	return a list of files and their directories that need might to be compiled
 	"""
@@ -920,7 +922,7 @@ def get_to_compile(source_files: list[str], old_hashes: dict, new_hashes: dict, 
 
 		rets.append([False, False])
 
-		threading.Thread(target=multi_thread, args=(to_recompile, rets[-1], sem, (file, old_hashes, new_hashes, add_incl))).start()
+		threading.Thread(target=multi_thread, args=(to_recompile, rets[-1], sem, (file, old_hashes, new_hashes, full_args))).start()
 
 	exit = False
 	while not exit:
@@ -1050,7 +1052,7 @@ def create_makefile():
 	calculate_new_hashes({}, hashes)
 
 	# get the file needed to compile
-	to_compile = get_to_compile(generic_settings["source_files"], {}, hashes, generic_settings["raw_includes"], generic_settings["semaphore"])
+	to_compile = get_to_compile(generic_settings["source_files"], {}, hashes, generic_settings["semaphore"], settings["cargs"] + settings["includes"])
 
 	make_file = ""
 
@@ -1253,7 +1255,7 @@ def main():
 	calculate_new_hashes(old_hashes, new_hashes)
 
 	# get the file needed to compile
-	to_compile = get_to_compile(settings["source_files"], old_hashes, new_hashes, settings["raw_includes"], settings["semaphore"])
+	to_compile = get_to_compile(settings["source_files"], old_hashes, new_hashes, settings["semaphore"], settings["cargs"] + settings["includes"])
 
 	# if to_compile is empty, no need to do anything
 	if not to_compile:
