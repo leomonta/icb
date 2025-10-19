@@ -33,7 +33,6 @@
 
 import subprocess # execute command on the cmd / bash / whatever
 import os         # get directories file names
-import json       # parse icb.json
 import hashlib    # for calculating hashes
 import threading  # for threading, duh
 import time       # time.sleep
@@ -43,39 +42,28 @@ import typing     # for callable
 
 
 TEMPLATE = """{
-	"compiler": {
-		"target": "exe",
-		"compiler_style": "gcc",
-		"compiler_exe": "gcc",
-		"linker_exe": "ld"
-	},
+compiler:
+  target: exe
+  compiler_style: gcc
+  compiler_exe: gcc
+  linker_exe: ld
 
-	"directories": {
-		"project_dir": ".",
-		"exe_path_name": "bin/app",
-		"include_dirs": [
-			"include"
-		],
-		"source_dirs": [
-			"src"
-		],
-		"temp_dir": "obj"
-	},
+directories:
+  project_dir: .
+  exe_path_name: bin/app
+  include_dirs: [include]
+  source_dirs: [src]
+  temp_dir: obj
 
-	"default": {
-		"compiler_args": "-g3",
-		"linker_args": "",
-		"libraries_dirs": [
-		],
-		"libraries_names": [
-		],
-		"scripts": {
-			"pre": "",
-			"post": ""
-		}
+default:
+  compiler_args: -g3
+  linker_args:
+  libraries_dirs: []
+  libraries_names: []
+  scripts:
+    pre:
+    post:
 
-	}
-}
 """
 
 HELP = """Usage: icb [-p PROFILE] [OPTION]
@@ -85,8 +73,8 @@ general options
 
   -a                    rebuild the entire project
   -p <profile-name>     utilize the given profile specifies in the config file
-  -e                    do not compile and export the `icb.json` as a Makefile
-      --gen             writes in the current directory an empty `icb.json` file
+  -e                    do not compile and export the `icb.yaml` as a Makefile
+      --gen             writes in the current directory an empty `icb.yaml` file
   -n <num-of-threads>   number of parallel threads to execute at the same time, default 12, -1 for as many as compilation units
   -h, --help            print this screen
 
@@ -102,7 +90,7 @@ printing options
 	  --no-colors           do not use colors for the output, same for compiler reports
 """
 
-CONFIG_FILENAME = "icb.json"
+CONFIG_FILENAME = "icb.yaml"
 HASH_FILENAME = "files_hash"
 
 DEFAULT_COMPILER = "gcc"
@@ -617,9 +605,9 @@ def get_includes(file: str, full_args: dict) -> list[str]:
 	return founds
 
 
-def parse_config_json(profile: str) -> dict[str, any]:
+def parse_config_file(profile: str) -> dict[str, any]:
 	"""
-	Set the global variables by reading the from icb.json
+	Set the global variables by reading the from icb.yaml
 	the optimization argument decide if debug or release mode
 	"""
 
@@ -678,11 +666,10 @@ def parse_config_json(profile: str) -> dict[str, any]:
 
 	# load and parse the file
 	if os.path.isfile(CONFIG_FILENAME):
-		cfg = load_yaml(open("icb.yaml").read())
-		config_file = json.load(open(CONFIG_FILENAME))
+		config_file = load_yaml(open(CONFIG_FILENAME).read())
 	else:
 		print(COLS.FG_YELLOW, f"[WARNING]{COLS.RESET} Config file \"{CONFIG_FILENAME}\" not found using the default template")
-		config_file = json.loads(TEMPLATE)
+		config_file = load_yaml(TEMPLATE)
 
 	# --- Compiler settings ---
 	# get the compiler executable (gcc, g++, clang, rustc, etc)
@@ -1017,10 +1004,10 @@ def exe_script(name: str, settings: dict):
 def get_all_profiles_names() -> list[str]:
 
 	if os.path.isfile(CONFIG_FILENAME):
-		config_file = json.load(open(CONFIG_FILENAME))
+		config_file = load_yaml(open(CONFIG_FILENAME).read())
 	else:
 		print(COLS.FG_YELLOW, f"[WARNING]{COLS.RESET} Config file \"{CONFIG_FILENAME}\" not found using the default template")
-		config_file = json.loads(TEMPLATE)
+		config_file = load_yaml(TEMPLATE)
 
 	profiles: list[str] = []
 
@@ -1043,7 +1030,7 @@ def create_makefile():
 		print(f"{COLS.FG_RED}[ERROR]{COLS.RESET} At least one profile is needed in the config_file, but none found")
 
 	# any profile is fine for the non rofile specific settings
-	generic_settings = parse_config_json(profile_names[0])
+	generic_settings = parse_config_file(profile_names[0])
 
 	os.chdir(generic_settings["project_path"])
 
@@ -1099,7 +1086,7 @@ def create_makefile():
 	for prof in profile_names:
 		PROF = prof.upper()
 
-		generic_settings = parse_config_json(prof)
+		generic_settings = parse_config_file(prof)
 
 		# Profiles
 		make_file += f"# --- {prof} ---\n"
@@ -1182,7 +1169,7 @@ def main():
 	compilation_profile = parse_profile_name(args)
 
 	# settings is garanteted to have all of the necessary values
-	settings = parse_config_json(compilation_profile)
+	settings = parse_config_file(compilation_profile)
 
 	# need to remove it else the next for loop will see it and recognize it
 	if "-p" in args:
