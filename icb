@@ -120,7 +120,7 @@ COMPILER_SPECIFIC_ARGS: list[dict[str]] = [
   "library_path": "-L",
   "library_name": "-l",
   "force_colors": "-fdiagnostics-color=always",
-  "no_colors": "-fdiagnostics-color=always",
+  "no_colors": "-fdiagnostics-color=never",
  }, {
   "compile_only": "/c",
   "output_compiler": "/Fo",
@@ -601,6 +601,9 @@ def get_includes(file: str, full_args: dict) -> list[str]:
 
 	# long live functional programming innit
 	founds = list(filter(lambda x: x != "\\", out.split()[2:]))
+
+	if err.strip() != "":
+		print(f"{COLS.FG_RED}[PRE PROCESSOR ERROR]{COLS.RESET} {err}")
 
 	return founds
 
