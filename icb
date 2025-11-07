@@ -254,7 +254,7 @@ def load_yaml(file: str) -> dict[str, str]:
 	return post_process(r)
 
 
-def get_indentation(snippet: str):
+def get_indentation(snippet: str) -> int:
 	for i in range(0, len(snippet)):
 		if not snippet[i].isspace():
 			return i
@@ -265,52 +265,60 @@ def load_recursive(file: str, start: int, prev_indent: int) -> (dict[str, str], 
 	res: dict = {}
 	while True:
 
+		# `\n` position
 		newline = 0
 
 		try:
 			newline = file.find("\n", start)
 		except ValueError:
+			# reached end of file
 			return res, -1
 
 		if newline == -1:
+			# reached end of file
 			return res, -1
 
 		line = file[start:newline]
 
-		# empty line
+		# empty line. Just skip it
 		if line.strip() == "":
 			start = newline + 1
 			continue
 
-		# did the indentation change?
 		curr_indent = get_indentation(file[start:newline])
 
 		# we went back to a previous indentation
+		# this section is done
 		if curr_indent <= prev_indent:
 			break
 
 		colon = file.find(":", start, newline)
 
-		# array
-		if colon == -1:
-			open_br = file.find("[", start)
-			clos_br = file.find("]", start)
-			value = file[open_br:clos_br + 1]
-			newline = file.find("\n", clos_br)
-			return value, newline + 1
-		else:
-			key = file[start:colon].strip()
-			value = file[colon + 1:newline].strip()
+		#  this should never happed
+		# if colon == -1:
+		# open_br = file.find("[", start)
+		# clos_br = file.find("]", start)
+		# value = file[open_br:clos_br + 1]
+		# newline = file.find("\n", clos_br)
+		# return value, newline + 1
+		# else:
 
-		# the next value is an object or an array
+		key = file[start:colon].strip()
+		value = file[colon + 1:newline].strip()
+
+		# the next value is an object or empty value
 		if value == "":
-			ret = load_recursive(file, newline + 1, curr_indent)
-			res[key] = ret[0]
-			if ret[1] < 0:
-				return res, -1
-			# o continue from where the recursion left off
-			start = ret[1]
-			continue
+			next_indent = get_indentation(file[newline + 1:])
+			if (next_indent > curr_indent):
+				ret = load_recursive(file, newline + 1, curr_indent)
+				res[key] = ret[0]
+				if ret[1] < 0:
+					return res, -1
+				# o continue from where the recursion left off
+				start = ret[1]
+				continue
+			else:
+				res[key] = ""
 		else:
 			res[key] = value
 
