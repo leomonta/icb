@@ -41,7 +41,7 @@ import copy       # for deep copy
 import typing     # for callable
 
 
-TEMPLATE = """{
+TEMPLATE = """
 compiler:
   target: exe
   compiler_style: gcc
@@ -393,8 +393,7 @@ def get_compilation_status(item: dict[str], tick: int = 0) -> str:
 
 def print_progress(statuses: list[dict], settings: dict) -> None:
 	"""
-	Prints the given `statuses` until the are all done
-	Returns when all the processes are done or failed
+	Prints the given `statuses` until they are all done
 	"""
 
 	GO_UP = "\x1b[1A"
@@ -434,7 +433,7 @@ def print_progress(statuses: list[dict], settings: dict) -> None:
 
 def print_report(statuses: list[dict], settings: dict) -> None:
 	"""
-	Prints the report for every status there is in statuses
+	Prints the report for every status there is in the given list
 	"""
 
 	if settings["printing"]["skip_reports"] == "all":
@@ -466,11 +465,7 @@ def print_report(statuses: list[dict], settings: dict) -> None:
 
 def compile_and_command(compilation_targets: list[str], settings: dict) -> None:
 	"""
-	calls compile()
-
-	print compilation status
-
-	calls link() if compilation was fine
+	calls the compilation and printings in the correct order
 	"""
 
 	# --- Compiling ---
@@ -551,6 +546,10 @@ def parse_num_threads(args: list[str]) -> int:
 
 
 def parse_file_path(filename: str) -> tuple[str, str, str] | None:
+	"""
+	Given a filename it returns its path, filename and extension
+	"""
+
 	# i need to differentiate different parts
 	# extension: to decide if it has to be compiled or not
 	# filename: everything else of the file name ignoring the extension, useful for naming compilitation files
@@ -570,6 +569,10 @@ def parse_file_path(filename: str) -> tuple[str, str, str] | None:
 
 
 def cmd(command: str) -> [subprocess.Popen, str, str]:
+	"""
+	Executes the given shell command and returns the Popen stream, stdout and stderr
+	"""
+
 	stream = subprocess.Popen(command.split(" "), stderr=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
 
 	out, err = stream.communicate() # execute the command and get the result
@@ -579,7 +582,7 @@ def cmd(command: str) -> [subprocess.Popen, str, str]:
 
 def exe_command(command: str, status: dict, sem: threading.Semaphore) -> int:
 	"""
-	execute the given command, set the ouput and return code to the correct structure
+	Execute the given command, set the ouput and return code to the correct structure for managing multithreading
 	"""
 
 	sem.acquire()
@@ -600,6 +603,9 @@ def exe_command(command: str, status: dict, sem: threading.Semaphore) -> int:
 
 
 def multi_thread(func: typing.Callable, ret: list, sem: threading.Semaphore, args: tuple):
+	"""
+	Guards the given callable with the given semaphore, passing it the given arguments
+	"""
 
 	sem.acquire()
 
@@ -634,7 +640,7 @@ def get_includes(file: str, full_args: dict) -> list[str]:
 
 def parse_config_file(profile: str) -> dict[str, any]:
 	"""
-	Reads the config file (`icb.yaml`) and loads the generic settings and the given `profile`
+	Reads the config file (`icb.yaml`), loads the generic settings, and the given `profile`
 	Returns the settings as a key value pair
 	"""
 
@@ -861,6 +867,7 @@ def make_new_file_hash(file: str) -> str:
 	"""
 	Calculate the hash for the given file an puts it in the new_hashes file
 	"""
+
 	# i need to re-instantiate the object to empty it
 	sha1 = hashlib.sha1()
 
@@ -880,14 +887,14 @@ def calculate_new_hashes(old_hashes: dict, new_hashes: dict) -> None:
 	"""
 
 	for file in old_hashes: # loop trough every file of each directory
-
 		new_hashes[file] = make_new_file_hash(file)
 
 
 def load_old_hashes(directory: str) -> dict[str, str]:
 	"""
-	Load in old_hashes the hashes present in files_hash
+	Load in old_hashes the hashes present in files_hash found in the given directory
 	"""
+
 	hashes: dict[str, str] = {}
 
 	# creates the file
@@ -921,7 +928,7 @@ def save_new_hashes(new_hashes: dict[str, str], directory: str) -> None:
 
 def get_to_compile(source_files: list[str], old_hashes: dict, new_hashes: dict, sem: threading.Semaphore, full_args: dict) -> list[str]:
 	"""
-	return a list of files and their directories that need might to be compiled
+	Return a list of files and their directories that might need to be compiled
 	"""
 
 	to_compile: list[tuple[str, str, str]] = [] # contains directory and filename
@@ -1015,6 +1022,10 @@ def link(settings: dict, status: dict) -> None:
 
 
 def exe_script(name: str, settings: dict):
+	"""
+	Executes the script in a different thread and prints its status
+	"""
+
 	nm = settings["scripts"][name]
 	result = {
 	 "result": COMPILATION_STATUS_COMPILING,
@@ -1030,6 +1041,9 @@ def exe_script(name: str, settings: dict):
 
 
 def get_all_profiles_names() -> list[str]:
+	"""
+	return all the profile names present in the config_file
+	"""
 
 	if os.path.isfile(CONFIG_FILENAME):
 		config_file = load_yaml(open(CONFIG_FILENAME).read())
@@ -1067,7 +1081,7 @@ def create_makefile():
 	calculate_new_hashes({}, hashes)
 
 	# get the file needed to compile
-	to_compile = get_to_compile(generic_settings["source_files"], {}, hashes, generic_settings["semaphore"], settings["cargs"] + settings["includes"])
+	to_compile = get_to_compile(generic_settings["source_files"], {}, hashes, generic_settings["semaphore"], generic_settings["cargs"] + generic_settings["includes"])
 
 	make_file = ""
 
