@@ -240,6 +240,10 @@ def parse_array(v: str):
 
 
 def post_process(sett: dict[str, str]) -> dict[str, str]:
+	"""
+	Fixes artifact generated during parsing of the yaml
+	mainly parses arrays from raw strings
+	"""
 	for k, v in sett.items():
 		if isinstance(v, dict):
 			sett[k] = post_process(v)
@@ -249,12 +253,18 @@ def post_process(sett: dict[str, str]) -> dict[str, str]:
 
 
 def load_yaml(file: str) -> dict[str, str]:
+	"""
+	Load the given yaml file as a dict
+	"""
 	start = 0
 	r, s = load_recursive(file, start, -1)
 	return post_process(r)
 
 
 def get_indentation(snippet: str) -> int:
+	"""
+	Counts the amount of whitepaces from the start of the `snippet` till the first non space char
+	"""
 	for i in range(0, len(snippet)):
 		if not snippet[i].isspace():
 			return i
@@ -328,6 +338,9 @@ def load_recursive(file: str, start: int, prev_indent: int) -> (dict[str, str], 
 
 
 def merge(a: dict, b: dict) -> dict:
+	"""
+	Merges two different dicts in one
+	"""
 	res: dict = {}
 
 	res = copy.deepcopy(b)
@@ -354,6 +367,9 @@ def get_value(d: any, key: str, val="") -> dict | str:
 
 
 def get_compilation_status(item: dict[str], tick: int = 0) -> str:
+	"""
+	Returns a string for the compilation status line, with colors and spinner synched to `tick`
+	"""
 
 	# the first element is the spinner, takes up 1 char
 	# the second is the name of the file being compiled, this should take at max 20 char
@@ -377,7 +393,7 @@ def get_compilation_status(item: dict[str], tick: int = 0) -> str:
 
 def print_progress(statuses: list[dict], settings: dict) -> None:
 	"""
-	Wait for the given process status be completed and prints its status in the meantime
+	Prints the given `statuses` until the are all done
 	Returns when all the processes are done or failed
 	"""
 
@@ -618,8 +634,8 @@ def get_includes(file: str, full_args: dict) -> list[str]:
 
 def parse_config_file(profile: str) -> dict[str, any]:
 	"""
-	Set the global variables by reading the from icb.yaml
-	the optimization argument decide if debug or release mode
+	Reads the config file (`icb.yaml`) and loads the generic settings and the given `profile`
+	Returns the settings as a key value pair
 	"""
 
 	settings: dict[str, any] = {
