@@ -14,14 +14,14 @@ Sometimes there are some variations from project to project, e.g. some times I u
 
 ## Modus Operandis: (?)
 
-A config file (`icb.json`) is usually needed. A `JSON` file that specify compiler, directories, lbraries and other compilation options.
+A config file (`icb.yaml`) is usually needed. A `yaml` file that specify compiler, directories, lbraries and other compilation options.
 
 Given the source directories (aka the directories containing source files) it attempts to compile all of the file recognized as source files (aka .c, .cpp .c++ ...) that have been modified since the last compilation
 To know which files have been modified it computes an hash of the file itself and compares it to a saved copy of the previous compilation (the hashes are stored unceremoniously in `files_hash.txt`)
 This check is also performed recursively for every `#include` the file contain. So, if an include file is changed (even at the system level) the modification is propagated through all the source files that use it. 
 
 Different profiles are supported, they are just free floating keys in the root of the config file, that can be used via `-p profilename`.
-For each profile a new subdirectory is created in the objects_path folder to contain the object files for that specific profile avoiding different profile to poison each other
+For each profile a new subdirectory is created in the temp_dir folder to contain the object files for that specific profile avoiding different profile to poison each other (i.e. ./<temp_dir>/<pname>
 
 Profiles are configured with 5 keys:
 - compiler_args
@@ -37,54 +37,39 @@ Default values are empty strings for all of the keys, to overwrite the default v
 
 Examples
 
-```json
+```yaml
 
-	...
+...
 
-	"pname": {
-		"compiler_args": "-g3 -Wall ...",
-		"linker_args": "-s -flto ...",
-		"libraries_dirs": [
-			"/path/to/library"
-		],
-		"libraries_names": [
-			"pthread",
-			"custom library"
-		],
-		"scripts": {
-			"pre": "clean"
-		}
-	}
+pname:
+  compiler_args: -g3 -Wall ...
+  linker_args: -s -flto ...
+  libraries_dirs: [/path/to/library]
+  libraries_names: [pthread, custom library]
+  scripts:
+    pre: clean
 
-	...
+...
 
 ```
 
 This profile `pname`, even if not specified, has a `post` script equals to `""`
 
-```json
+```yaml
 
-	...
+...
 
-	"default": {
-		"scripts": {
-			"pre": "clean"
-		}
-	}
+default:
+  scripts:
+    pre: clean
 
-	"pname": {
-		"compiler_args": "-g3 -Wall ...",
-		"linker_args": "-s -ltco ...",
-		"libraries_names": [
-			"pthread",
-			"raylib",
-			"..."
-		],
-		"scripts": {
-		}
-	}
+pname:
+  compiler_args: -g3 -Wall ...
+  linker_args: -s -ltco ...
+  libraries_names: [pthread, raylib, ...],
+  scripts:
 
-	...
+...
 
 ```
 
@@ -93,33 +78,24 @@ This profile `pname` instead has a `post` script equals to `""` and a `pre` scri
 
 To prevent inheriting default profile settings you can specify every key with an empty value
 
-```json
+```yaml
 
-	...
+...
 
-	"default": {
-		"scripts": {
-			"pre": "clean"
-		}
-	}
+default:
+  scripts:
+    pre: clean
 
-	"pname": {
-		"compiler_args": "-g3 -Wall ...",
-		"linker_args": "-s -ltco ...",
-		"libraries_names": [
-		],
-		"libraries_dirs": [
-			"pthread",
-			"raylib",
-			"..."
-		],
-		"scripts": {
-			"pre" : "",
-			"post" : ""
-		}
-	}
+pname: {
+  compiler_args: -g3 -Wall ...
+  linker_args: -s -ltco ...
+  libraries_names: []
+  libraries_dirs: [pthread, raylib]
+  scripts:
+    pre:
+    post:
 
-	...
+...
 
 ```
 
@@ -134,7 +110,7 @@ Loads the files hashes in an array
 Parse the config files and the profile, then saves the useful data in an internal dict
 > The builder `cd`s in the `project_dir` so all the other dirs should be relative to that one
 
-If the `pre` key is present in `scripts` execute the given script
+If the `pre` key is present in `scripts` execute the given script with the current profile name as the first argument 
 
 Lists all of the files that are in the `source_dirs` and select only the one that can be compiled (e.g. .c, .cpp. .h) and have been modified
 > Early exit if no files to compile are found
@@ -220,41 +196,25 @@ printing options
 
 ## the icb.json structure
 
-```json
-{
-	"compiler": {
-		"compiler_style": "<what kind of compiler is being used (gcc, clang, msvc, rustc)>",
-		"compiler_exe": "<path to the compiler executable>",
-		"linker_exe": "<path to the linker executable>"
-	},
+```yaml
+compiler:
+  compiler_style: <what kind of compiler is being used (gcc, clang, msvc, rustc)>
+  compiler_exe: <path to the compiler executable>
+  linker_exe: <path to the linker executable>
 
-	"directories": {
+directories:
+  project_dir: <project root directory relative to where the icb is being called>
+  exe_path_name: <path and name where to put the final executable>
+  include_dirs: [<additional include directories to pass to the compiler>]
+  source_dirs: [<directories where to search source files>]
+  temp_dir: <name of the directory where to put object files>
 
-		"project_dir": "<project root directory relative to where the icb is being called>",
-		"exe_path_name": "<path and name where to put the final executable>",
-		"include_dirs": [
-			"<additional include directories to pass to the compiler>"
-		],
-		"source_dirs": [
-			"<directories where to search source files>"
-		],
-		"temp_dir": "<name of the directory where to put object files>"
-	},
-
-	"<profile name>": {
-		"compiler_args": "<additional compiler args>",
-		"linker_args": "<additional linker args>",
-		"libraries_dirs": [
-			"<additional libraries directories>"
-		],
-		"libraries_names": [
-			"<additional libraries names>"
-		],
-		"scripts": {
-			"pre": "<script to execute before the compilation begin>",
-			"post": "<script to execute after the compilation end>"
-		}
-	}
-
-}
+<profile name>:
+  compiler_args: <additional compiler args>
+  linker_args: <additional linker args>
+  libraries_dirs: [<additional libraries directories>]
+  libraries_names: [<additional libraries names>]
+  scripts:
+    pre: <script to execute before the compilation begin>
+    post: <script to execute after the compilation end>
 ```
