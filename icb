@@ -1023,7 +1023,7 @@ def exe_script(name: str, settings: dict):
 	 "errors": "",
 	 "command": nm
 	}
-	threading.Thread(target=exe_command, args=(f'./{nm}', result, settings["semaphore"])).start()
+	threading.Thread(target=exe_command, args=(f'./{nm} {settings["profile"]}', result, settings["semaphore"])).start()
 	print_progress([result], settings)
 	print("")
 	print_report([result], settings)
