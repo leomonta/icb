@@ -825,6 +825,7 @@ def to_recompile(filename: str, old_hashes: dict, new_hashes: dict, full_args: d
 
 	# get all the includes in one go, and remove any duplicate
 	all_files: list[str] = list(dict.fromkeys(get_includes(filename, full_args)))
+	all_files.append(filename)
 
 	res = False
 
