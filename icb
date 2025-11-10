@@ -33,6 +33,7 @@
 
 import subprocess # execute command on the cmd / bash / whatever
 import os         # get directories file names
+import shutil     # remove a directory tree
 import hashlib    # for calculating hashes
 import threading  # for threading, duh
 import time       # time.sleep
@@ -77,17 +78,18 @@ general options
       --gen             writes in the current directory an empty `icb.yaml` file
   -n <num-of-threads>   number of parallel threads to execute at the same time, default 12, -1 for as many as compilation units
   -h, --help            print this screen
+  --clean               clean the contents of the temp dir for the given profile, if no profile was specified, remove the entire directory
 
 printing options
 
-	  --skip-empty-reports  do not show reports that are empty
-	  --skip-warn-reports   do not show reports that contain only warnings
-	  --skip-all-reports    do not show reports
+  --skip-empty-reports  do not show reports that are empty
+  --skip-warn-reports   do not show reports that contain only warnings
+  --skip-all-reports    do not show reports
 
-	  --skip-progress       do not show the animations for compiling units
-	  --skip-statuses       do not show any status for compiling / done / failed compilations
+  --skip-progress       do not show the animations for compiling units
+  --skip-statuses       do not show any status for compiling / done / failed compilations
 
-	  --no-colors           do not use colors for the output, same for compiler reports
+  --no-colors           do not use colors for the output, same for compiler reports
 """
 
 CONFIG_FILENAME = "icb.yaml"
@@ -523,15 +525,15 @@ def compile_and_command(compilation_targets: list[str], settings: dict) -> None:
 		sys.exit(3)
 
 
-def parse_profile_name(args: list[str]) -> str:
+def parse_profile_name(args: list[str]) -> str | None:
 	try:
 		return args[args.index("-p") + 1]
 	except IndexError:
 		# default profile
-		return "default"
+		return None
 	except ValueError:
 		# default profile
-		return "default"
+		return None
 
 
 def parse_num_threads(args: list[str]) -> int:
@@ -784,6 +786,9 @@ def parse_config_file(profile: str) -> dict[str, any]:
 	#
 	# ----- Profiles -----
 	#
+
+	if profile is None:
+		profile = "default"
 
 	if profile not in config_file:
 		print(COLS.FG_YELLOW, f"[WARNING]{COLS.FG_LIGHT_RED} Specified profile not found, using default empty profile.", COLS.RESET)
@@ -1064,6 +1069,17 @@ def sanitize_makefile(text: str) -> str:
 	return text.replace('"', '\\"')
 
 
+def clean_temp_dir(profile: str, project_path: str, temp_dir_name: str):
+	os.chdir(project_path)
+
+	if profile is None:
+		shutil.rmtree(temp_dir_name)
+		os.mkdir(temp_dir_name)
+	else:
+		shutil.rmtree(temp_dir_name + "/" + profile)
+		os.mkdir(temp_dir_name + "/" + profile)
+
+
 def create_makefile():
 
 	profile_names = get_all_profiles_names()
@@ -1207,7 +1223,7 @@ def main():
 		print(HELP)
 		exit(0)
 
-	# this returns anythin after the -p, is the switch is not set return "default"
+	# this returns anythin after the -p, is the switch is not set return None
 	compilation_profile = parse_profile_name(args)
 
 	# settings is garanteted to have all of the necessary values
@@ -1227,6 +1243,15 @@ def main():
 		if "-n" == arg:
 			settings["semaphore"] = threading.Semaphore(parse_num_threads(sys.argv))
 			continue
+
+		if "-a" == arg:
+			compile_all = True
+			continue
+
+		if "--clean" == arg:
+			clean_temp_dir(compilation_profile, settings["project_path"], settings["objects_path"])
+			continue
+
 		# printing options
 
 		if "--skip-empty-reports" == arg:
@@ -1254,10 +1279,6 @@ def main():
 			settings["printing"]["colors"] = False
 			continue
 
-		if "-a" == arg:
-			compile_all = True
-			continue
-
 		# unknown switches, error
 		print(f"{COLS.FG_RED}Unknown argument \"{arg}\" Exiting{COLS.RESET}")
 		print(HELP)
@@ -1269,6 +1290,9 @@ def main():
 	if settings["scripts"]["pre"] != "":
 		print(COLS.FG_GREEN, " --- Pre Script ---", COLS.RESET)
 		exe_script("pre", settings)
+
+	if compilation_profile is None:
+		compilation_profile = "default"
 
 	hash_path = settings["objects_path"] + "/" + compilation_profile + "/"
 

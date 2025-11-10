@@ -181,6 +181,7 @@ general options
 	--gen                 writes in the current directory an empty `icb.json` file
 	-n <num-of-threads>   number of parallel threads to execute at the same time, default 12
 	-h, --help            print this screen
+	--clean               clean the contents of the temp dir for the given profile, if no profile was specified, remove the entire directory
 
 printing options
 
