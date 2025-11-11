@@ -318,8 +318,16 @@ def load_recursive(file: str, start: int, prev_indent: int) -> (dict[str, str], 
 		key = file[start:colon].strip()
 		value = file[colon + 1:newline].strip()
 
-		# the next value is an object or empty value
-		if value == "":
+		if "[" in value:
+			open_br = file.find("[", start)
+			clos_br = file.find("]", start)
+			value = file[open_br:clos_br + 1]
+			newline = file.find("\n", clos_br)
+
+			res[key] = value
+		elif value == "":
+
+			# the next value is an object or empty value
 			next_indent = get_indentation(file[newline + 1:])
 			if (next_indent > curr_indent):
 				ret = load_recursive(file, newline + 1, curr_indent)
