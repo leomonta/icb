@@ -31,15 +31,15 @@
 # FIXME: exported makefile does not rely on the default profile
 # FIXME: the makefile prevent make from detecting if the source files have been modified
 
-import subprocess # execute command on the cmd / bash / whatever
-import os         # get directories file names
-import shutil     # remove a directory tree
-import hashlib    # for calculating hashes
-import threading  # for threading, duh
-import time       # time.sleep
-import sys        # for arguments parsing
-import copy       # for deep copy
-import typing     # for callable
+import subprocess    # execute command on the cmd / bash / whatever
+import os            # get directories file names
+import shutil        # remove a directory tree
+import hashlib       # for calculating hashes
+import threading     # for threading, duh
+import time          # time.sleep
+import sys           # for arguments parsing
+import copy          # for deep copy
+from typing import Callable, List, Dict # for callable
 
 
 TEMPLATE = """
@@ -96,6 +96,7 @@ CONFIG_FILENAME = "icb.yaml"
 HASH_FILENAME = "files_hash"
 
 DEFAULT_COMPILER = "gcc"
+DEFAULT_COMPILATION_TARGET = "exe"
 
 EMPTY_PROFILE = {
  "libraries_names": [],
@@ -108,11 +109,11 @@ EMPTY_PROFILE = {
  }
 }
 
-SPINNERS: list[str] = ["|", "/", "-", "\\"]
+SPINNERS: List[str] = ["|", "/", "-", "\\"]
 
-SOURCE_FILES_EXTENSIONS: list[str] = ["c", "cpp", "cxx", "c++", "cc", "C", "s"]
+SOURCE_FILES_EXTENSIONS: List[str] = ["c", "cpp", "cxx", "c++", "cc", "C", "s"]
 
-COMPILER_SPECIFIC_ARGS: list[dict[str]] = [
+COMPILER_SPECIFIC_ARGS: List[Dict[str, str]] = [
  {
   "compile_only": "-c",
   "output_compiler": "-o ",
@@ -140,6 +141,28 @@ COMPILATION_STATUS_DONE = 1
 COMPILATION_STATUS_FAILED = 2
 
 RECURSION_LIMIT = 50
+
+SETTING_TARGET = "target"
+SETTING_TYPE = "type"
+SETTING_COMPILER = "compiler"
+SETTING_LINKER = "linker"
+SETTING_CARGS = "cargs"
+SETTING_LARGS = "largs"
+SETTING_SPECIFICS = "specifics"
+SETTING_EXE_PATH_NAME = "exe_path_name"
+SETTING_PROJECT_PATH = "project_path"
+SETTING_INCLUDES = "includes"
+SETTING_OBJECTS_PATH = "objects_path"
+SETTING_SOURCE_FILES = "source_files"
+SETTING_PROFILE = "profile"
+SETTING_LIBRARIES_NAMES = "libraries_names"
+SETTING_LIBRARIES_PATHS = "libraries_paths"
+SETTING_SCRIPTS = "scripts"
+SETTING_SEMAPHORE = "semaphore"
+SETTING_PRINTING = "printing"
+SETTING_SKIP_REPORTS = "skip_reports"
+SETTING_SKIP_PROGRESS = "skip_progress"
+SETTING_COLORS = "colors"
 
 
 class COLS:
@@ -225,14 +248,14 @@ class COLS:
 		PROGRESS_STATUS = ["Processing", "Done", "Failed"]
 
 
-PROGRRESS_PREFIXES: list[str] = ["|", "+", "-"]
-PROGRESS_STATUS: list[str] = [f"{COLS.FG_BLUE}Processing", f"{COLS.FG_GREEN}Done", f"{COLS.FG_RED}Failed"]
+PROGRRESS_PREFIXES: List[str] = ["|", "+", "-"]
+PROGRESS_STATUS: List[str] = [f"{COLS.FG_BLUE}Processing", f"{COLS.FG_GREEN}Done", f"{COLS.FG_RED}Failed"]
 
 
 def parse_array(v: str):
 	op = v.find("[")
 	cl = v.find("]")
-	elems: list[str] = v[op + 1:cl].split(",")
+	elems: List[str] = v[op + 1:cl].split(",")
 	res = []
 	for e in elems:
 		s = e.strip()
@@ -241,20 +264,20 @@ def parse_array(v: str):
 	return res
 
 
-def post_process(sett: dict[str, str]) -> dict[str, str]:
+def post_process(sett: Dict[str, str]) -> Dict[str, str]:
 	"""
 	Fixes artifact generated during parsing of the yaml
 	mainly parses arrays from raw strings
 	"""
 	for k, v in sett.items():
-		if isinstance(v, dict):
+		if isinstance(v, Dict):
 			sett[k] = post_process(v)
 		elif "[" in v and "]" in v:
 			sett[k] = parse_array(v)
 	return sett
 
 
-def load_yaml(file: str) -> dict[str, str]:
+def load_yaml(file: str) -> Dict[str, str]:
 	"""
 	Load the given yaml file as a dict
 	"""
@@ -273,8 +296,8 @@ def get_indentation(snippet: str) -> int:
 	return 0
 
 
-def load_recursive(file: str, start: int, prev_indent: int) -> (dict[str, str], int):
-	res: dict = {}
+def load_recursive(file: str, start: int, prev_indent: int) -> (Dict[str, str], int):
+	res: Dict = {}
 	while True:
 
 		# `\n` position
@@ -347,18 +370,18 @@ def load_recursive(file: str, start: int, prev_indent: int) -> (dict[str, str], 
 	return res, start
 
 
-def merge(a: dict, b: dict) -> dict:
+def merge(a: Dict, b: Dict) -> Dict:
 	"""
 	Merges two different dicts in one
 	"""
-	res: dict = {}
+	res: Dict = {}
 
 	res = copy.deepcopy(b)
 
 	for key in a:
 		if key in res:
-			if isinstance(a[key], dict) and isinstance(res[key], dict):
-				# both dict have the same key
+			if isinstance(a[key], Dict) and isinstance(res[key], Dict):
+				# both Dict have the same key
 				res[key] = merge(a[key], res[key])
 		else:
 			res[key] = copy.deepcopy(a[key])
@@ -366,7 +389,7 @@ def merge(a: dict, b: dict) -> dict:
 	return res
 
 
-def get_value(d: any, key: str, val="") -> dict | str:
+def get_value(d: any, key: str, val="") -> Dict | str:
 	"""
 	Tries to get the desired value from the dict, if fails returns val
 	"""
@@ -376,7 +399,7 @@ def get_value(d: any, key: str, val="") -> dict | str:
 		return val
 
 
-def get_compilation_status(item: dict[str], tick: int = 0) -> str:
+def get_compilation_status(item: Dict[str, str], tick: int = 0) -> str:
 	"""
 	Returns a string for the compilation status line, with colors and spinner synched to `tick`
 	"""
@@ -401,7 +424,7 @@ def get_compilation_status(item: dict[str], tick: int = 0) -> str:
 	return prefix + COLS.FG_LIGHT_BLACK + name + suffix + COLS.RESET + "\n"
 
 
-def print_progress(statuses: list[dict], settings: dict) -> None:
+def print_progress(statuses: List[Dict], settings: Dict) -> None:
 	"""
 	Prints the given `statuses` until they are all done
 	"""
@@ -419,10 +442,10 @@ def print_progress(statuses: list[dict], settings: dict) -> None:
 		all_done = True
 		for item in statuses:
 
-			if settings["printing"]["skip_progress"] == "none":
+			if settings[SETTING_PRINTING][SETTING_SKIP_PROGRESS] == "none":
 				print(get_compilation_status(item, tick), end="")
 				num_lines += 1
-			elif settings["printing"]["skip_progress"] == "progress" and item["result"] == COMPILATION_STATUS_DONE:
+			elif settings[SETTING_PRINTING][SETTING_SKIP_PROGRESS] == "progress" and item["result"] == COMPILATION_STATUS_DONE:
 				print(get_compilation_status(item, tick), end="")
 				num_lines += 1
 			if item["result"] == COMPILATION_STATUS_COMPILING:
@@ -441,26 +464,26 @@ def print_progress(statuses: list[dict], settings: dict) -> None:
 		tick += 1
 
 
-def print_report(statuses: list[dict], settings: dict) -> None:
+def print_report(statuses: List[Dict], settings: Dict) -> None:
 	"""
 	Prints the report for every status there is in the given list
 	"""
 
-	if settings["printing"]["skip_reports"] == "all":
+	if settings[SETTING_PRINTING][SETTING_SKIP_REPORTS] == "all":
 		return
 
 	for item in statuses:
 
-		if settings["printing"]["skip_reports"] == "empty":
+		if settings[SETTING_PRINTING][SETTING_SKIP_REPORTS] == "empty":
 			if item["output"] == "" and item["errors"] == "":
 				# skip this report
 				continue
-		if settings["printing"]["skip_reports"] == "warn":
+		if settings[SETTING_PRINTING][SETTING_SKIP_REPORTS] == "warn":
 			if item["result"] != COMPILATION_STATUS_FAILED:
 				# skip this report
 				continue
 
-		cmd = item["command"]
+		cmd = " ".join(item["command"].split())
 		name = item["name"].ljust(20)[:20]
 		print(f" {name}{COLS.FG_LIGHT_BLACK} {cmd}{COLS.RESET}\n")
 
@@ -473,7 +496,7 @@ def print_report(statuses: list[dict], settings: dict) -> None:
 			print(COLS.FG_LIGHT_RED, "    err", COLS.RESET, ":\n", item["errors"], sep="")
 
 
-def compile_and_command(compilation_targets: list[str], settings: dict) -> None:
+def compile_and_command(compilation_targets: List[str], settings: Dict) -> None:
 	"""
 	calls the compilation and printings in the correct order
 	"""
@@ -483,7 +506,8 @@ def compile_and_command(compilation_targets: list[str], settings: dict) -> None:
 	print("\n", COLS.FG_GREEN, " --- Compiling ---", COLS.RESET)
 
 	# where the status of the different compilations is stored
-	compilations: list[dict] = []
+	compilations: List[Dict] = []
+
 	# compile each file and show the output,
 	# and check for errors
 	compile(compilation_targets, settings, compilations)
@@ -533,7 +557,7 @@ def compile_and_command(compilation_targets: list[str], settings: dict) -> None:
 		sys.exit(3)
 
 
-def parse_profile_name(args: list[str]) -> str | None:
+def parse_profile_name(args: List[str]) -> str | None:
 	try:
 		return args[args.index("-p") + 1]
 	except IndexError:
@@ -544,7 +568,7 @@ def parse_profile_name(args: list[str]) -> str | None:
 		return None
 
 
-def parse_num_threads(args: list[str]) -> int:
+def parse_num_threads(args: List[str]) -> int:
 	try:
 		return int(args[args.index("-n") + 1])
 	except ValueError:
@@ -571,7 +595,7 @@ def parse_file_path(filename: str) -> tuple[str, str, str] | None:
 	file_extension = filename[ext_pos + 1:]
 
 	# get filename and relative source dir
-	path: list[str] = filename_wo_extension.split("/")
+	path: List[str] = filename_wo_extension.split("/")
 	file_name: str = path[-1]
 	full_directory: str = "/".join(path[:-1])
 
@@ -583,14 +607,14 @@ def cmd(command: str) -> [subprocess.Popen, str, str]:
 	Executes the given shell command and returns the Popen stream, stdout and stderr
 	"""
 
-	stream = subprocess.Popen(command.split(" "), stderr=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
+	stream = subprocess.Popen(command.split(), stderr=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
 
 	out, err = stream.communicate() # execute the command and get the result
 
 	return stream, out, err
 
 
-def exe_command(command: str, status: dict, sem: threading.Semaphore) -> int:
+def exe_command(command: str, status: Dict, sem: threading.Semaphore) -> int:
 	"""
 	Execute the given command, set the ouput and return code to the correct structure for managing multithreading
 	"""
@@ -612,7 +636,7 @@ def exe_command(command: str, status: dict, sem: threading.Semaphore) -> int:
 	return ret
 
 
-def multi_thread(func: typing.Callable, ret: list, sem: threading.Semaphore, args: tuple):
+def multi_thread(func: Callable, ret: List, sem: threading.Semaphore, args: tuple):
 	"""
 	Guards the given callable with the given semaphore, passing it the given arguments
 	"""
@@ -628,16 +652,16 @@ def multi_thread(func: typing.Callable, ret: list, sem: threading.Semaphore, arg
 	return ret
 
 
-def get_includes(file: str, full_args: dict) -> list[str]:
+def get_includes(file: str, full_args: str) -> List[str]:
 	"""
 	Returns all of the includes included, directly or indirectly, by the given file
 	"""
 
-	founds: list[str] = []
+	founds: List[str] = []
 	# org_path: str = parse_file_path(file)[0]
 
 	# TODO: Think about the MSVC children
-	stream, out, err = cmd(f"cpp -MM{full_args} {file}")
+	stream, out, err = cmd(f"cpp -MM {full_args} {file}")
 
 	# long live functional programming innit
 	founds = list(filter(lambda x: x != "\\", out.split()[2:]))
@@ -648,59 +672,31 @@ def get_includes(file: str, full_args: dict) -> list[str]:
 	return founds
 
 
-def parse_config_file(profile: str) -> dict[str, any]:
+def parse_config_file(profile: str) -> Dict[str, any]:
 	"""
 	Reads the config file (`icb.yaml`), loads the generic settings, and the given `profile`
 	Returns the settings as a key value pair
 	"""
 
-	settings: dict[str, any] = {
-	                                          # the final product of the compilation an executable a static library or a dynamic one
-	 "target": "exe",
-
-	                                          # type of compiler gcc like or rust like generally
-	 "type": "gcc",
-
-	                                          # name of the compiler and linker executable
-	 "compiler": "gcc",
+	settings: Dict[str, any] = {
+	 "target": "exe",                      # the final product of the compilation: an executable a static library or a dynamic one
+	 "type": "gcc",                        # type of compiler gcc like or rust like generally
+	 "compiler": "gcc",                    # name of the compiler and linker executable
 	 "linker": "gcc",
-
-	                                          # compiler and linker args
-	 "cargs": "",
+	 "cargs": "",                          # compiler and linker args
 	 "largs": "",
-
-	                                          # output, includes, filenames swithces (/Fo -o) for msvc, clang, and gcc
-	 "specifics": {},
-
-	                                          # path and name of the final executable
-	 "exe_path_name": "",
-
-	                                          # base directory of the project
-	 "project_path": "",
-
-	                                          # the string composed by the path of the includes -> "-I./include -I./ext/include -I..."
-	 "includes": "",
-
-	                                          # directory where to leave the compiled object files
-	 "objects_path": "",
-
-	                                          # directories containing the names of the source directories
-	 "source_files": [],
-
-	                                          # the string composed by the names of the libraries -> "-lpthread -lm ..."
-	 "libraries_names": "",
-
-	                                          # the string composed by the path of the libraries -> "-L./path/to/lib -L..."
-	 "libraries_paths": "",
-
-	                                          # name of the scripts to execute
-	 "scripts": {},
-
-	                                          # semaphore to limit the number of concurrent threds that can be executed
-	 "semaphore": threading.Semaphore(12),
-
-	                                          # what to skip when printing
-	 "printing": {
+	 "specifics": {},                      # output, includes, filenames swithces (/fo -o) for msvc, clang, and gcc
+	 "exe_path_name": "",                  # path and name of the final executable
+	 "project_path": "",                   # base directory of the project
+	 "includes": "",                       # the string composed by the path of the includes -> "-i./include -i./ext/include -i..."
+	 "objects_path": "",                   # directory where to leave the compiled object files
+	 "source_files": [],                   # directories containing the names of the source directories
+	 "profile": "",                        # the name of the profile in user
+	 "libraries_names": "",                # the string composed by the names of the libraries -> "-lpthread -lm ..."
+	 "libraries_paths": "",                # the string composed by the path of the libraries -> "-l./path/to/lib -l..."
+	 "scripts": {},                        # name of the scripts to execute
+	 "semaphore": threading.Semaphore(12), # semaphore to limit the number of concurrent threds that can be executed
+	 "printing": {                          # what to skip when printing
 	  "skip_reports": "none",
 	  "skip_progress": "none",
 	  "colors": True
@@ -720,27 +716,29 @@ def parse_config_file(profile: str) -> dict[str, any]:
 
 	compiler_settings = get_value(config_file, "compiler")
 
-	settings["compiler"] = get_value(compiler_settings, "compiler_exe", DEFAULT_COMPILER)
+	settings[SETTING_COMPILER] = get_value(compiler_settings, "compiler_exe", DEFAULT_COMPILER)
 
-	settings["type"] = get_value(compiler_settings, "compiler_style", DEFAULT_COMPILER)
+	settings[SETTING_TYPE] = get_value(compiler_settings, "compiler_style", DEFAULT_COMPILER)
+
+	settings[SETTING_TARGET] = get_value(compiler_settings, "target", DEFAULT_COMPILATION_TARGET)
 
 	# 0 gcc / clang
 	# 1 msvc
 	compiler_type: int = 0
 
-	if settings["type"] == "gcc":
+	if settings[SETTING_TYPE] == "gcc":
 		compiler_type = 0
-	elif settings["type"] == "clang":
+	elif settings[SETTING_TYPE] == "clang":
 		compiler_type = 0
-	elif settings["type"] == "msvc":
+	elif settings[SETTING_TYPE] == "msvc":
 		compiler_type = 1
 
-	settings["specifics"] = COMPILER_SPECIFIC_ARGS[compiler_type]
+	settings[SETTING_SPECIFICS] = COMPILER_SPECIFIC_ARGS[compiler_type]
 
 	del compiler_type
 
 	# if no linker is specified use the compiler executable
-	settings["linker"] = get_value(compiler_settings, "linker_exe", settings["compiler"])
+	settings[SETTING_LINKER] = get_value(compiler_settings, "linker_exe", settings[SETTING_COMPILER])
 
 	del compiler_settings
 
@@ -753,17 +751,17 @@ def parse_config_file(profile: str) -> dict[str, any]:
 	directories_settings = get_value(config_file, "directories")
 
 	# base directory for ALL the other directories and files
-	settings["project_path"] = get_value(directories_settings, "project_dir", "./")
+	settings[SETTING_PROJECT_PATH] = get_value(directories_settings, "project_dir", "./")
 
 	# name of the final executable
-	settings["exe_path_name"] = get_value(directories_settings, "exe_path_name", "a.out")
+	settings[SETTING_EXE_PATH_NAME] = get_value(directories_settings, "exe_path_name", "a.out")
 
-	os.makedirs(os.path.dirname(settings["exe_path_name"]), exist_ok=True)
+	os.makedirs(os.path.dirname(settings[SETTING_EXE_PATH_NAME]), exist_ok=True)
 
-	targets: list[str] = []
+	targets: List[str] = []
 
 	old_dir: str = os.getcwd()
-	os.chdir(settings["project_path"])
+	os.chdir(settings[SETTING_PROJECT_PATH])
 
 	for sdir in get_value(directories_settings, "source_dirs", ["src"]):
 		for path, subdirs, files in os.walk(sdir):
@@ -774,7 +772,7 @@ def parse_config_file(profile: str) -> dict[str, any]:
 
 	del old_dir, path, subdirs, files, sdir
 
-	settings["source_files"] = targets
+	settings[SETTING_SOURCE_FILES] = targets
 
 	del targets
 
@@ -783,11 +781,10 @@ def parse_config_file(profile: str) -> dict[str, any]:
 	#
 
 	# create the includes args -> -IInclude -ISomelibrary/include -I...
-	for Idir in get_value(directories_settings, "include_dirs", ["include"]):
-		settings["includes"] += " " + settings["specifics"]["include_path"] + Idir
+	settings[SETTING_INCLUDES] = get_value(directories_settings, "include_dirs", ["include"])
 
-	settings["objects_path"] = get_value(directories_settings, "temp_dir", "obj")
-	os.makedirs(settings["objects_path"], exist_ok=True) # create the obj directory
+	settings[SETTING_OBJECTS_PATH] = get_value(directories_settings, "temp_dir", "obj")
+	os.makedirs(settings[SETTING_OBJECTS_PATH], exist_ok=True) # create the obj directory
 
 	del directories_settings
 
@@ -801,34 +798,32 @@ def parse_config_file(profile: str) -> dict[str, any]:
 	if profile not in config_file:
 		print(COLS.FG_YELLOW, f"[WARNING]{COLS.FG_LIGHT_RED} Specified profile not found, using default empty profile.", COLS.RESET)
 
-	default_settings = merge(EMPTY_PROFILE, get_value(config_file, "default", {}))
+	default_configuration = merge(EMPTY_PROFILE, get_value(config_file, "default", {}))
 
 	if profile not in config_file:
 		print(f"{COLS.FG_YELLOW}[WARNING]{COLS.RESET} profile '{profile}' not found, using default.")
 
-	profile_settings = merge(default_settings, get_value(config_file, profile, {}))
+	profile_settings = merge(default_configuration, get_value(config_file, profile, {}))
 
 	# --- Scripts settings ---
 
-	settings["scripts"] = get_value(profile_settings, "scripts", default_settings["scripts"])
+	settings[SETTING_SCRIPTS] = get_value(profile_settings, "scripts", default_configuration[SETTING_SCRIPTS])
 
-	settings["profile"] = profile
-	os.makedirs(settings["objects_path"] + "/" + settings["profile"], exist_ok=True) # create the profile directory
+	settings[SETTING_PROFILE] = profile
+	os.makedirs(settings[SETTING_OBJECTS_PATH] + "/" + settings[SETTING_PROFILE], exist_ok=True) # create the profile directory
 
 	#
 	# --- Libs ---
 	#
 
 	# create the library args -> -lSomelib -lSomelib2 -l...
-	for lname in get_value(profile_settings, "libraries_names", default_settings["libraries_names"]):
-		settings["libraries_names"] += " " + settings["specifics"]["library_name"] + lname
+	settings[SETTING_LIBRARIES_NAMES] = get_value(profile_settings, "libraries_names", default_configuration["libraries_names"])
 
 	# cant be sure if it has been created
 	# del lname
 
 	# create the libraries path args -> -LSomelibrary/lib -L...
-	for ldname in get_value(profile_settings, "libraries_dirs", default_settings["libraries_dirs"]):
-		settings["libraries_paths"] += " " + settings["specifics"]["library_path"] + ldname
+	settings[SETTING_LIBRARIES_PATHS] = get_value(profile_settings, "libraries_dirs", default_configuration["libraries_dirs"])
 
 	# cant be sure if it has been created
 	# del ldname
@@ -837,20 +832,13 @@ def parse_config_file(profile: str) -> dict[str, any]:
 	# --- Compiler and Linker arguments ---
 	#
 
-	settings["cargs"] = get_value(profile_settings, "compiler_args", default_settings["compiler_args"])
-	settings["largs"] = get_value(profile_settings, "linker_args", default_settings["linker_args"])
-
-	# fix for empty args
-	if settings["cargs"]:
-		settings["cargs"] = " " + settings["cargs"]
-
-	if settings["largs"]:
-		settings["largs"] = " " + settings["largs"]
+	settings[SETTING_CARGS] = get_value(profile_settings, "compiler_args", default_configuration["compiler_args"])
+	settings[SETTING_LARGS] = get_value(profile_settings, "linker_args", default_configuration["linker_args"])
 
 	return settings
 
 
-def to_recompile(filename: str, old_hashes: dict, new_hashes: dict, full_args: dict) -> bool | str:
+def to_recompile(filename: str, old_hashes: Dict, new_hashes: Dict, full_args: str) -> bool | str:
 	"""
 	Given a filename return if it needs to be recompiled
 	A source file needs to be recompiled if it has been modified
@@ -859,7 +847,7 @@ def to_recompile(filename: str, old_hashes: dict, new_hashes: dict, full_args: d
 	"""
 
 	# get all the includes in one go, and remove any duplicate
-	all_files: list[str] = list(dict.fromkeys(get_includes(filename, full_args)))
+	all_files: List[str] = list(dict.fromkeys(get_includes(filename, full_args)))
 	all_files.append(filename)
 
 	res = False
@@ -894,7 +882,7 @@ def make_new_file_hash(file: str) -> str:
 	return sha1.hexdigest() # create the new hash
 
 
-def calculate_new_hashes(old_hashes: dict, new_hashes: dict) -> None:
+def calculate_new_hashes(old_hashes: Dict, new_hashes: Dict) -> None:
 	"""
 	Calculate the hashes for all the source files
 	"""
@@ -903,12 +891,12 @@ def calculate_new_hashes(old_hashes: dict, new_hashes: dict) -> None:
 		new_hashes[file] = make_new_file_hash(file)
 
 
-def load_old_hashes(directory: str) -> dict[str, str]:
+def load_old_hashes(directory: str) -> Dict[str, str]:
 	"""
 	Load in old_hashes the hashes present in files_hash found in the given directory
 	"""
 
-	hashes: dict[str, str] = {}
+	hashes: Dict[str, str] = {}
 
 	# creates the file
 	if not os.path.exists(directory + HASH_FILENAME):
@@ -928,7 +916,7 @@ def load_old_hashes(directory: str) -> dict[str, str]:
 	return hashes
 
 
-def save_new_hashes(new_hashes: dict[str, str], directory: str) -> None:
+def save_new_hashes(new_hashes: Dict[str, str], directory: str) -> None:
 	"""
 	Write all the hashes on files_hash
 	"""
@@ -939,16 +927,16 @@ def save_new_hashes(new_hashes: dict[str, str], directory: str) -> None:
 			f.write(new_hashes[i] + "\n")
 
 
-def get_to_compile(source_files: list[str], old_hashes: dict, new_hashes: dict, sem: threading.Semaphore, full_args: dict) -> list[str]:
+def get_to_compile(source_files: list[str], old_hashes: Dict, new_hashes: Dict, sem: threading.Semaphore, full_args: str) -> List[str]:
 	"""
 	Return a list of files and their directories that might need to be compiled
 	"""
 
-	to_compile: list[tuple[str, str, str]] = [] # contains directory and filename
+	to_compile: List[tuple[str, str, str]] = [] # contains directory and filename
 
 	# checking which file need to be compiled
 	file: str = ""
-	rets: list = []
+	rets: List = []
 	for file in source_files: # loop trough every file of each directory
 
 		fname = parse_file_path(file)
@@ -976,22 +964,22 @@ def get_to_compile(source_files: list[str], old_hashes: dict, new_hashes: dict, 
 	return to_compile
 
 
-def compile(to_compile: list[str], settings: dict, compilations: list[dict]) -> None:
+def compile(to_compile: List[str], settings: Dict, compilations: List[Dict]) -> None:
 	"""
 	Calls the compiler with the specified arguments
 	"""
 
-	cexe = settings["compiler"]
-	includes = settings["includes"]
-	cargs = settings["cargs"]
-	obj_dir = settings["objects_path"] + "/" + settings["profile"]
-	oargs = settings["specifics"]
-	colors = oargs["force_colors"] if settings["printing"]["colors"] else oargs["no_colors"]
+	cexe = settings[SETTING_COMPILER]
+	includes = join_arg_list(settings[SETTING_INCLUDES], settings[SETTING_SPECIFICS]["include_path"])
+	cargs = settings[SETTING_CARGS]
+	obj_dir = settings[SETTING_OBJECTS_PATH] + "/" + settings[SETTING_PROFILE]
+	oargs = settings[SETTING_SPECIFICS]
+	colors = oargs["force_colors"] if settings[SETTING_PRINTING][SETTING_COLORS] else oargs["no_colors"]
 
 	for file in to_compile:
 		obj_name: str = "".join(file[0].split("/"))
 
-		command = f'{cexe} {colors}{cargs}{includes} {oargs["compile_only"]} {oargs["output_compiler"]}{obj_dir}/{obj_name}{file[1]}.{file[2]}.{oargs["object_extension"]} {file[0]}/{file[1]}.{file[2]}'
+		command = f'{cexe} {colors} {cargs} {includes} {oargs["compile_only"]} {oargs["output_compiler"]} {obj_dir}/{obj_name}{file[1]}.{file[2]}.{oargs["object_extension"]} {file[0]}/{file[1]}.{file[2]}'
 
 		result = {
 		 "result": COMPILATION_STATUS_COMPILING,
@@ -1001,22 +989,44 @@ def compile(to_compile: list[str], settings: dict, compilations: list[dict]) -> 
 		 "command": command
 		}
 		compilations.append(result)
-		threading.Thread(target=exe_command, args=(command, result, settings["semaphore"])).start()
+		threading.Thread(target=exe_command, args=(command, result, settings[SETTING_SEMAPHORE])).start()
 
 
-def link(settings: dict, status: dict) -> None:
+def resolve_libs(paths: List[str], names: List[str]) -> str:
+
+	res = ""
+
+	for lname in names:
+		root = " "
+		libname = f"lib{lname}.a"
+		for lpath in paths:
+			if os.path.isfile(lpath + "/" + libname):
+				root = f" {lpath}/"
+				break
+		res = res + root + libname
+
+	return res.strip()
+
+
+def link(settings: Dict, status: Dict) -> None:
 	"""
 	Link together all the files that have been compiled with the specified libraries and arguments
 	"""
 
-	lexe = settings["linker"]
-	largs = settings["largs"]
-	epn = settings["exe_path_name"]
-	libs = settings["libraries_paths"]
-	obj_dir = settings["objects_path"] + "/" + settings["profile"]
-	oargs = settings["specifics"]
+	lexe = settings[SETTING_LINKER]
+	largs = settings[SETTING_LARGS]
+	epn = settings[SETTING_EXE_PATH_NAME]
+	lib_paths = join_arg_list(settings[SETTING_LIBRARIES_PATHS], settings[SETTING_SPECIFICS]["library_path"])
+	obj_dir = settings[SETTING_OBJECTS_PATH] + "/" + settings[SETTING_PROFILE]
+	oargs = settings[SETTING_SPECIFICS]
 
-	command = f'{lexe}{largs} {oargs["output_linker"]}{epn}{libs}'
+	output_linker = oargs["output_linker"]
+
+	if settings[SETTING_TARGET] == "static":
+		lib_paths = resolve_libs(settings[SETTING_LIBRARIES_PATHS], settings[SETTING_LIBRARIES_NAMES])
+		command = f'{lexe} {largs} {epn} {lib_paths}'
+	else:
+		command = f'{lexe} {largs} {output_linker} {epn} {lib_paths}'
 
 	for path, subdirs, files in os.walk(obj_dir):
 		for name in files:
@@ -1027,19 +1037,23 @@ def link(settings: dict, status: dict) -> None:
 
 			command += f' {obj_dir}/{obj_name}{file[1]}.{oargs["object_extension"]}'
 
-	command += settings["libraries_names"]
+	libnames = join_arg_list(settings[SETTING_LIBRARIES_NAMES], settings[SETTING_SPECIFICS]["library_name"])
+	if settings[SETTING_TARGET] == "static":
+		libnames = ""
+
+	command += libnames
 
 	status["name"] = epn
 	status["command"] = command
-	threading.Thread(target=exe_command, args=(command, status, settings["semaphore"])).start()
+	threading.Thread(target=exe_command, args=(command, status, settings[SETTING_SEMAPHORE])).start()
 
 
-def exe_script(name: str, settings: dict):
+def exe_script(name: str, settings: Dict):
 	"""
 	Executes the script in a different thread and prints its status
 	"""
 
-	nm = settings["scripts"][name]
+	nm = settings[SETTING_SCRIPTS][name]
 	result = {
 	 "result": COMPILATION_STATUS_COMPILING,
 	 "name": nm,
@@ -1047,13 +1061,13 @@ def exe_script(name: str, settings: dict):
 	 "errors": "",
 	 "command": nm
 	}
-	threading.Thread(target=exe_command, args=(f'./{nm} {settings["profile"]}', result, settings["semaphore"])).start()
+	threading.Thread(target=exe_command, args=(f'./{nm} {settings[SETTING_PROFILE]}', result, settings[SETTING_SEMAPHORE])).start()
 	print_progress([result], settings)
 	print("")
 	print_report([result], settings)
 
 
-def get_all_profiles_names() -> list[str]:
+def get_all_profiles_names() -> List[str]:
 	"""
 	return all the profile names present in the config_file
 	"""
@@ -1064,7 +1078,7 @@ def get_all_profiles_names() -> list[str]:
 		print(COLS.FG_YELLOW, f"[WARNING]{COLS.RESET} Config file \"{CONFIG_FILENAME}\" not found using the default template")
 		config_file = load_yaml(TEMPLATE)
 
-	profiles: list[str] = []
+	profiles: List[str] = []
 
 	for k in config_file:
 		if k not in ["scripts", "compiler", "directories"]:
@@ -1098,23 +1112,23 @@ def create_makefile():
 	# any profile is fine for the non rofile specific settings
 	generic_settings = parse_config_file(profile_names[0])
 
-	os.chdir(generic_settings["project_path"])
+	os.chdir(generic_settings[SETTING_PROJECT_PATH])
 
 	# I use the normal pipeline to get all the files to compile, but I use an empty dict to simulate a clean compilation
-	hashes: dict = {}
+	hashes: Dict = {}
 	calculate_new_hashes({}, hashes)
 
 	# get the file needed to compile
-	to_compile = get_to_compile(generic_settings["source_files"], {}, hashes, generic_settings["semaphore"], generic_settings["cargs"] + generic_settings["includes"])
+	to_compile = get_to_compile(generic_settings[SETTING_SOURCE_FILES], {}, hashes, generic_settings[SETTING_SEMAPHORE], generic_settings[SETTING_CARGS] + generic_settings[SETTING_INCLUDES])
 
 	make_file = ""
 
 	# variables
 
-	make_file += f"CC       = {generic_settings['compiler']}\n"
-	make_file += f"BINNAME  = {generic_settings['exe_path_name']}\n"
-	make_file += f"OBJSDIR  = {generic_settings['objects_path']}\n"
-	make_file += f"INCLUDES ={generic_settings['includes']}\n"
+	make_file += f"CC       = {generic_settings[SETTING_COMPILER]}\n"
+	make_file += f"BINNAME  = {generic_settings[SETTING_EXE_PATH_NAME]}\n"
+	make_file += f"OBJSDIR  = {generic_settings[SETTING_OBJECTS_PATH]}\n"
+	make_file += f"INCLUDES ={generic_settings[SETTING_INCLUDES]}\n"
 	make_file += "PROFILE  = \n"
 	make_file += "CARGS    = \n"
 
@@ -1147,7 +1161,7 @@ def create_makefile():
 
 	make_file += "\n\n"
 
-	scripts_used: list[str] = []
+	scripts_used: List[str] = []
 
 	for prof in profile_names:
 		PROF = prof.upper()
@@ -1157,10 +1171,10 @@ def create_makefile():
 		# Profiles
 		make_file += f"# --- {prof} ---\n"
 		make_file += "\n"
-		make_file += f"{PROF}-CARGS    ={sanitize_makefile(generic_settings['cargs'])}\n"
-		make_file += f"{PROF}-LARGS    ={sanitize_makefile(generic_settings['largs'])}\n"
-		make_file += f"{PROF}-LIBPATH  ={sanitize_makefile(generic_settings['libraries_paths'])}\n"
-		make_file += f"{PROF}-LIBNAMES ={sanitize_makefile(generic_settings['libraries_names'])}\n"
+		make_file += f"{PROF}-CARGS    ={sanitize_makefile(generic_settings[SETTING_CARGS])}\n"
+		make_file += f"{PROF}-LARGS    ={sanitize_makefile(generic_settings[SETTING_LARGS])}\n"
+		make_file += f"{PROF}-LIBPATH  ={sanitize_makefile(generic_settings[SETTING_LIBRARIES_PATHS])}\n"
+		make_file += f"{PROF}-LIBNAMES ={sanitize_makefile(generic_settings[SETTING_LIBRARIES_NAMES])}\n"
 		make_file += "\n\n"
 
 		make_file += f"{PROF}-LINK: PROFILE = {prof}\n"
@@ -1173,18 +1187,18 @@ def create_makefile():
 		pre_rule = ""
 		post_rule = ""
 
-		if generic_settings["scripts"]["pre"] != "":
+		if generic_settings[SETTING_SCRIPTS]["pre"] != "":
 			pre_rule = f"{PROF}-PRE "
 			scripts_used.append(pre_rule)
 			make_file += f"{PROF}-PRE:\n"
-			make_file += f"	./{generic_settings['scripts']['pre']}\n"
+			make_file += f"	./{generic_settings[SETTING_SCRIPTS]['pre']}\n"
 			make_file += "\n"
 
-		if generic_settings["scripts"]["post"] != "":
+		if generic_settings[SETTING_SCRIPTS]["post"] != "":
 			post_rule = f" {PROF}-POST"
 			scripts_used.append(post_rule)
 			make_file += f"{PROF}-POST:\n"
-			make_file += f"	./{generic_settings['scripts']['post']}\n"
+			make_file += f"	./{generic_settings[SETTING_SCRIPTS]['post']}\n"
 			make_file += "\n"
 
 		make_file += f"{prof}: | {pre_rule}{PROF}-LINK{post_rule}\n"
@@ -1210,6 +1224,14 @@ def create_makefile():
 
 	with open("Makefile", "w+") as mf:
 		mf.write(make_file)
+
+
+def join_arg_list(arr: List, joiner: str) -> str:
+	res = ""
+	for elem in arr:
+		res = res + " " + joiner + elem
+
+	return res
 
 
 def main():
@@ -1249,7 +1271,7 @@ def main():
 	for arg in args:
 
 		if "-n" == arg:
-			settings["semaphore"] = threading.Semaphore(parse_num_threads(sys.argv))
+			settings[SETTING_SEMAPHORE] = threading.Semaphore(parse_num_threads(sys.argv))
 			continue
 
 		if "-a" == arg:
@@ -1257,34 +1279,34 @@ def main():
 			continue
 
 		if "--clean" == arg:
-			clean_temp_dir(compilation_profile, settings["project_path"], settings["objects_path"])
+			clean_temp_dir(compilation_profile, settings[SETTING_PROJECT_PATH], settings[SETTING_OBJECTS_PATH])
 			continue
 
 		# printing options
 
 		if "--skip-empty-reports" == arg:
-			settings["printing"]["skip_reports"] = "empty"
+			settings[SETTING_PRINTING][SETTING_SKIP_REPORTS] = "empty"
 			continue
 
 		if "--skip-warn-reports" == arg:
-			settings["printing"]["skip_reports"] = "warn"
+			settings[SETTING_PRINTING][SETTING_SKIP_REPORTS] = "warn"
 			continue
 
 		if "--skip-all-reports" == arg:
-			settings["printing"]["skip_reports"] = "all"
+			settings[SETTING_PRINTING][SETTING_SKIP_REPORTS] = "all"
 			continue
 
 		if "--skip-progress" == arg:
-			settings["printing"]["skip_progress"] = "progress"
+			settings[SETTING_PRINTING][SETTING_SKIP_PROGRESS] = "progress"
 			continue
 
 		if "--skip-statuses" == arg:
-			settings["printing"]["skip_progress"] = "statuses"
+			settings[SETTING_PRINTING][SETTING_SKIP_PROGRESS] = "statuses"
 			continue
 
 		if "--no-colors" == arg:
 			COLS.erase_all()
-			settings["printing"]["colors"] = False
+			settings[SETTING_PRINTING][SETTING_COLORS] = False
 			continue
 
 		# unknown switches, error
@@ -1293,43 +1315,45 @@ def main():
 		exit(1)
 
 	# script are executed from the project path
-	os.chdir(settings["project_path"])
+	os.chdir(settings[SETTING_PROJECT_PATH])
 
-	if settings["scripts"]["pre"] != "":
+	if settings[SETTING_SCRIPTS]["pre"] != "":
 		print(COLS.FG_GREEN, " --- Pre Script ---", COLS.RESET)
 		exe_script("pre", settings)
 
 	if compilation_profile is None:
 		compilation_profile = "default"
 
-	hash_path = settings["objects_path"] + "/" + compilation_profile + "/"
+	hash_path = settings[SETTING_OBJECTS_PATH] + "/" + compilation_profile + "/"
 
-	old_hashes: dict = {}
+	old_hashes: Dict = {}
 
 	# by not loading old hashes, all of the files results new
 	if not compile_all:
 		# load old hashes
 		old_hashes = load_old_hashes(hash_path)
 
-	new_hashes: dict = {}
+	new_hashes: Dict = {}
 	# obtain new hashes
 	calculate_new_hashes(old_hashes, new_hashes)
 
+	full_args = settings[SETTING_CARGS] + join_arg_list(settings[SETTING_INCLUDES], settings[SETTING_SPECIFICS]["include_path"])
+
 	# get the file needed to compile
-	to_compile = get_to_compile(settings["source_files"], old_hashes, new_hashes, settings["semaphore"], settings["cargs"] + settings["includes"])
+	to_compile = get_to_compile(settings[SETTING_SOURCE_FILES], old_hashes, new_hashes, settings[SETTING_SEMAPHORE], full_args)
 
 	# if to_compile is empty, no need to do anything
 	if not to_compile:
 		print(f"{COLS.FG_YELLOW} --- Compilation and linking skipped due to no new or modified files ---{COLS.RESET}")
 		return
 
-	if not os.path.exists(settings["objects_path"]):
-		os.makedirs(settings["objects_path"])
+	if not os.path.exists(settings[SETTING_OBJECTS_PATH]):
+		os.makedirs(settings[SETTING_OBJECTS_PATH])
 
-	compile_and_command(to_compile, settings)
 	# manages compilation and printing
+	compile_and_command(to_compile, settings)
 
-	if settings["scripts"]["post"] != "":
+	if settings[SETTING_SCRIPTS]["post"] != "":
 		print("\n", COLS.FG_GREEN, " --- Post Script ---", COLS.RESET)
 		exe_script("post", settings)
 
