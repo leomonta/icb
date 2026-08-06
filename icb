@@ -31,14 +31,14 @@
 # FIXME: exported makefile does not rely on the default profile
 # FIXME: the makefile prevent make from detecting if the source files have been modified
 
-import subprocess    # execute command on the cmd / bash / whatever
-import os            # get directories file names
-import shutil        # remove a directory tree
-import hashlib       # for calculating hashes
-import threading     # for threading, duh
-import time          # time.sleep
-import sys           # for arguments parsing
-import copy          # for deep copy
+import subprocess                       # execute command on the cmd / bash / whatever
+import os                               # get directories file names
+import shutil                           # remove a directory tree
+import hashlib                          # for calculating hashes
+import threading                        # for threading, duh
+import time                             # time.sleep
+import sys                              # for arguments parsing
+import copy                             # for deep copy
 from typing import Callable, List, Dict # for callable
 
 
@@ -78,7 +78,7 @@ general options
       --gen             writes in the current directory an empty `icb.yaml` file
   -n <num-of-threads>   number of parallel threads to execute at the same time, default 12, -1 for as many as compilation units
   -h, --help            print this screen
-  --clean               clean the contents of the temp dir for the given profile, if no profile was specified, remove the entire directory
+      --clean           clean the contents of the temp dir for the given profile, if no profile was specified, remove the entire directory
 
 printing options
 
