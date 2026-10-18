@@ -42,8 +42,7 @@ import copy                             # for deep copy
 from typing import Callable, List, Dict # for callable
 
 
-TEMPLATE = """
-compiler:
+TEMPLATE = """compiler:
   target: exe
   compiler_style: gcc
   compiler_exe: gcc
@@ -141,6 +140,8 @@ COMPILATION_STATUS_DONE = 1
 COMPILATION_STATUS_FAILED = 2
 
 RECURSION_LIMIT = 50
+
+STATIC_TARGETS = ["static", "exe"]
 
 SETTING_TARGET = "target"
 SETTING_TYPE = "type"
@@ -1022,7 +1023,7 @@ def link(settings: Dict, status: Dict) -> None:
 
 	output_linker = oargs["output_linker"]
 
-	if settings[SETTING_TARGET] == "static":
+	if settings[SETTING_TARGET] not in STATIC_TARGETS:
 		lib_paths = resolve_libs(settings[SETTING_LIBRARIES_PATHS], settings[SETTING_LIBRARIES_NAMES])
 		command = f'{lexe} {largs} {epn} {lib_paths}'
 	else:
@@ -1038,7 +1039,7 @@ def link(settings: Dict, status: Dict) -> None:
 			command += f' {obj_dir}/{obj_name}{file[1]}.{oargs["object_extension"]}'
 
 	libnames = join_arg_list(settings[SETTING_LIBRARIES_NAMES], settings[SETTING_SPECIFICS]["library_name"])
-	if settings[SETTING_TARGET] == "static":
+	if settings[SETTING_TARGET] not in STATIC_TARGETS:
 		libnames = ""
 
 	command += libnames
@@ -1091,8 +1092,7 @@ def sanitize_makefile(text: str) -> str:
 	return text.replace('"', '\\"')
 
 
-def clean_temp_dir(profile: str, project_path: str, temp_dir_name: str):
-	os.chdir(project_path)
+def clean_temp_dir(profile: str, temp_dir_name: str):
 
 	if profile is None:
 		shutil.rmtree(temp_dir_name)
@@ -1111,8 +1111,6 @@ def create_makefile():
 
 	# any profile is fine for the non rofile specific settings
 	generic_settings = parse_config_file(profile_names[0])
-
-	os.chdir(generic_settings[SETTING_PROJECT_PATH])
 
 	# I use the normal pipeline to get all the files to compile, but I use an empty dict to simulate a clean compilation
 	hashes: Dict = {}
@@ -1279,8 +1277,8 @@ def main():
 			continue
 
 		if "--clean" == arg:
-			clean_temp_dir(compilation_profile, settings[SETTING_PROJECT_PATH], settings[SETTING_OBJECTS_PATH])
-			continue
+			clean_temp_dir(compilation_profile, settings[SETTING_OBJECTS_PATH])
+			exit(0)
 
 		# printing options
 
