@@ -142,6 +142,7 @@ COMPILATION_STATUS_FAILED = 2
 RECURSION_LIMIT = 50
 
 STATIC_TARGETS = ["static", "exe"]
+LIBRARY_TARGETS = ["library", "lib"]
 
 SETTING_TARGET = "target"
 SETTING_TYPE = "type"
@@ -329,15 +330,6 @@ def load_recursive(file: str, start: int, prev_indent: int) -> (dict[str, str], 
 			break
 
 		colon = file.find(":", start, newline)
-
-		#  this should never happed
-		# if colon == -1:
-		# open_br = file.find("[", start)
-		# clos_br = file.find("]", start)
-		# value = file[open_br:clos_br + 1]
-		# newline = file.find("\n", clos_br)
-		# return value, newline + 1
-		# else:
 
 		key = file[start:colon].strip()
 		value = file[colon + 1:newline].strip()
@@ -608,7 +600,7 @@ def cmd(command: str) -> [subprocess.Popen, str, str]:
 	Executes the given shell command and returns the Popen stream, stdout and stderr
 	"""
 
-	stream = subprocess.Popen(command.split(), stderr=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
+	stream = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True, shell=True)
 
 	out, err = stream.communicate() # execute the command and get the result
 
@@ -908,11 +900,13 @@ def load_old_hashes(directory: str) -> dict[str, str]:
 			data = f.readline()
 			if not data:
 				break
-			temp = data.split(":")
+			colon = data.rfind(":")
+
+			hsh = data[colon:]
 
 			# remove trailing newline
-			temp[1] = temp[1].replace("\n", "")
-			hashes[temp[0]] = temp[1]
+			hsh = hsh.replace("\n", "")
+			hashes[data[:colon]] = hsh
 
 	return hashes
 
@@ -1018,12 +1012,16 @@ def link(settings: dict, status: dict) -> None:
 	largs = settings[SETTING_LARGS]
 	epn = settings[SETTING_EXE_PATH_NAME]
 	lib_paths = join_arg_list(settings[SETTING_LIBRARIES_PATHS], settings[SETTING_SPECIFICS]["library_path"])
+	libnames = join_arg_list(settings[SETTING_LIBRARIES_NAMES], settings[SETTING_SPECIFICS]["library_name"])
 	obj_dir = settings[SETTING_OBJECTS_PATH] + "/" + settings[SETTING_PROFILE]
 	oargs = settings[SETTING_SPECIFICS]
 
 	output_linker = oargs["output_linker"]
 
-	if settings[SETTING_TARGET] not in STATIC_TARGETS:
+	if settings[SETTING_TARGET] in LIBRARY_TARGETS:
+		lib_paths = f"-l \"{lib_paths} {libnames}\""
+		command = f'{lexe} {largs} {epn} {lib_paths}'
+	elif settings[SETTING_TARGET] not in STATIC_TARGETS:
 		lib_paths = resolve_libs(settings[SETTING_LIBRARIES_PATHS], settings[SETTING_LIBRARIES_NAMES])
 		command = f'{lexe} {largs} {epn} {lib_paths}'
 	else:
@@ -1038,11 +1036,8 @@ def link(settings: dict, status: dict) -> None:
 
 			command += f' {obj_dir}/{obj_name}{file[1]}.{oargs["object_extension"]}'
 
-	libnames = join_arg_list(settings[SETTING_LIBRARIES_NAMES], settings[SETTING_SPECIFICS]["library_name"])
-	if settings[SETTING_TARGET] not in STATIC_TARGETS:
-		libnames = ""
-
-	command += libnames
+	if settings[SETTING_TARGET] in STATIC_TARGETS:
+		command += libnames
 
 	status["name"] = epn
 	status["command"] = command
@@ -1232,6 +1227,19 @@ def join_arg_list(arr: list, joiner: str) -> str:
 	return res
 
 
+def get_contiguous_arg(args: dict, arg: str) -> None:
+	try:
+		index = args.index(arg)
+		int(args[index + 1])
+
+	except ValueError:
+		# default amount
+		return 12
+	except IndexError:
+		# default amount
+		return 12
+
+
 def main():
 
 	args = sys.argv[1:]
@@ -1270,6 +1278,10 @@ def main():
 
 		if "-n" == arg:
 			settings[SETTING_SEMAPHORE] = threading.Semaphore(parse_num_threads(sys.argv))
+			indx = args.index("-n")
+			# be mindfull of the order
+			args.pop(indx + 1)
+			args.pop(indx)
 			continue
 
 		if "-a" == arg:
