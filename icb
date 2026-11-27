@@ -69,7 +69,7 @@ default:
 HELP = """Usage: icb [-p PROFILE] [OPTION]
    or: icb [--gen | -e | --help | -h]
 
-general options
+General options:
 
   -a                    rebuild the entire project
   -p <profile-name>     utilize the given profile specifies in the config file
@@ -79,7 +79,7 @@ general options
   -h, --help            print this screen
       --clean           clean the contents of the temp dir for the given profile, if no profile was specified, remove the entire directory
 
-printing options
+Printing options:
 
   --skip-empty-reports  do not show reports that are empty
   --skip-warn-reports   do not show reports that contain only warnings
@@ -89,9 +89,14 @@ printing options
   --skip-statuses       do not show any status for compiling / done / failed compilations
 
   --no-colors           do not use colors for the output, same for compiler reports
+
+Notes:
+
+  Any change in the config file (`icb.yaml`) triggers a full rebuild of the profile being built.
 """
 
 CONFIG_FILENAME = "icb.yaml"
+CONFIG_FILE_ABSOLUTE_PATH = None
 HASH_FILENAME = "files_hash"
 
 DEFAULT_COMPILER = "gcc"
@@ -110,7 +115,7 @@ EMPTY_PROFILE = {
 
 SPINNERS: list[str] = ["|", "/", "-", "\\"]
 
-SOURCE_FILES_EXTENSIONS: list[str] = ["c", "cpp", "cxx", "c++", "cc", "C", "s"]
+SOURCE_FILES_EXTENSIONS: list[str] = ["c", "cpp", "cxx", "c++", "cc", "C", "s", "S"]
 
 COMPILER_SPECIFIC_ARGS: list[dict[str, str]] = [
  {
@@ -387,7 +392,10 @@ def get_value(d: any, key: str, val="") -> dict | str:
 	Tries to get the desired value from the dict, if fails returns val
 	"""
 	try:
-		return d[key]
+		v = d[key]
+		if isinstance(v, str) and v.strip() == "":
+			return val
+		return v
 	except Exception:
 		return val
 
@@ -489,39 +497,41 @@ def print_report(statuses: list[dict], settings: dict) -> None:
 			print(COLS.FG_LIGHT_RED, "    err", COLS.RESET, ":\n", item["errors"], sep="")
 
 
-def compile_and_command(compilation_targets: list[str], settings: dict) -> None:
+def compile_and_command(compilation_targets: list[str], settings: dict, link_only: bool) -> None:
 	"""
 	calls the compilation and printings in the correct order
 	"""
 
 	# --- Compiling ---
 
-	print("\n", COLS.FG_GREEN, " --- Compiling ---", COLS.RESET)
+	if not link_only:
 
-	# where the status of the different compilations is stored
-	compilations: list[dict] = []
+		print("\n", COLS.FG_GREEN, " --- Compiling ---", COLS.RESET)
 
-	# compile each file and show the output,
-	# and check for errors
-	compile(compilation_targets, settings, compilations)
+		# where the status of the different compilations is stored
+		compilations: list[dict] = []
 
-	print_progress(compilations, settings)
-	print("")
-	print_report(compilations, settings)
+		# compile each file and show the output,
+		# and check for errors
+		compile(compilation_targets, settings, compilations)
 
-	compilation_failed: bool = False
+		print_progress(compilations, settings)
+		print("")
+		print_report(compilations, settings)
 
-	for item in compilations:
-		if item["result"] == COMPILATION_STATUS_FAILED: # Failure
-			compilation_failed = True
+		compilation_failed: bool = False
 
-	# all compilations done, linking
-	if compilation_failed:
-		print(f"\n{COLS.FG_RED} --- Linking skipped due to errors in compilation process! ---")
-		sys.exit(2)
+		for item in compilations:
+			if item["result"] == COMPILATION_STATUS_FAILED: # Failure
+				compilation_failed = True
 
-	# cleaning prev compilation data
-	compilations.clear()
+		# all compilations done, linking
+		if compilation_failed:
+			print(f"\n{COLS.FG_RED} --- Linking skipped due to errors in compilation process! ---")
+			sys.exit(2)
+
+		# cleaning prev compilation data
+		compilations.clear()
 
 	# --- Linking ---
 
@@ -696,6 +706,9 @@ def parse_config_file(profile: str) -> dict[str, any]:
 	 }
 	}
 
+	global CONFIG_FILE_ABSOLUTE_PATH
+	CONFIG_FILE_ABSOLUTE_PATH = os.path.abspath(CONFIG_FILENAME)
+
 	# load and parse the file
 	if os.path.isfile(CONFIG_FILENAME):
 		config_file = load_yaml(open(CONFIG_FILENAME).read())
@@ -746,6 +759,8 @@ def parse_config_file(profile: str) -> dict[str, any]:
 	# base directory for ALL the other directories and files
 	settings[SETTING_PROJECT_PATH] = get_value(directories_settings, "project_dir", "./")
 
+	os.chdir(settings[SETTING_PROJECT_PATH])
+
 	# name of the final executable
 	settings[SETTING_EXE_PATH_NAME] = get_value(directories_settings, "exe_path_name", "a.out")
 
@@ -753,17 +768,12 @@ def parse_config_file(profile: str) -> dict[str, any]:
 
 	targets: list[str] = []
 
-	old_dir: str = os.getcwd()
-	os.chdir(settings[SETTING_PROJECT_PATH])
-
 	for sdir in get_value(directories_settings, "source_dirs", ["src"]):
 		for path, subdirs, files in os.walk(sdir):
 			for name in files:
 				targets.append(f"{path}/{name}")
 
-	os.chdir(old_dir)
-
-	del old_dir, path, subdirs, files, sdir
+	del path, subdirs, files, sdir
 
 	settings[SETTING_SOURCE_FILES] = targets
 
@@ -851,13 +861,20 @@ def to_recompile(filename: str, old_hashes: dict, new_hashes: dict, full_args: s
 			if old_hashes[curr] != new_hashes[curr]:
 				res = filename
 		else:
-			new_hashes[curr] = make_new_file_hash(curr)
+			new_hashes[curr] = get_hash_of_file(curr)
 			res = filename
+
+	if res is False:
+		if old_hashes.get(CONFIG_FILENAME, None) is None:
+			return filename
+
+		if old_hashes[CONFIG_FILENAME] != new_hashes[CONFIG_FILENAME]:
+			return filename
 
 	return res
 
 
-def make_new_file_hash(file: str) -> str:
+def get_hash_of_file(file: str) -> str:
 	"""
 	Calculate the hash for the given file an puts it in the new_hashes file
 	"""
@@ -875,13 +892,13 @@ def make_new_file_hash(file: str) -> str:
 	return sha1.hexdigest() # create the new hash
 
 
-def calculate_new_hashes(old_hashes: dict, new_hashes: dict) -> None:
+def recalculate_old_hashes(old_hashes: dict, new_hashes: dict) -> None:
 	"""
 	Calculate the hashes for all the source files
 	"""
 
 	for file in old_hashes: # loop trough every file of each directory
-		new_hashes[file] = make_new_file_hash(file)
+		new_hashes[file] = get_hash_of_file(file)
 
 
 def load_old_hashes(directory: str) -> dict[str, str]:
@@ -902,7 +919,7 @@ def load_old_hashes(directory: str) -> dict[str, str]:
 				break
 			colon = data.rfind(":")
 
-			hsh = data[colon:]
+			hsh = data[colon + 1:]
 
 			# remove trailing newline
 			hsh = hsh.replace("\n", "")
@@ -959,7 +976,13 @@ def get_to_compile(source_files: list[str], old_hashes: dict, new_hashes: dict, 
 	return to_compile
 
 
-def compile(to_compile: list[str], settings: dict, compilations: list[dict]) -> None:
+def normalize(name: str) -> str:
+	unds = name.replace("_", "__")
+	splits = unds.split("/")
+	return "_".join(splits)
+
+
+def compile(to_compile: list[tuple[str, str, str]], settings: dict, compilations: list[dict]) -> None:
 	"""
 	Calls the compiler with the specified arguments
 	"""
@@ -972,9 +995,7 @@ def compile(to_compile: list[str], settings: dict, compilations: list[dict]) -> 
 	colors = oargs["force_colors"] if settings[SETTING_PRINTING][SETTING_COLORS] else oargs["no_colors"]
 
 	for file in to_compile:
-		obj_name: str = "".join(file[0].split("/"))
-
-		command = f'{cexe} {colors} {cargs} {includes} {oargs["compile_only"]} {oargs["output_compiler"]} {obj_dir}/{obj_name}{file[1]}.{file[2]}.{oargs["object_extension"]} {file[0]}/{file[1]}.{file[2]}'
+		command = f'{cexe} {colors} {cargs} {includes} {oargs["compile_only"]} {oargs["output_compiler"]} {obj_dir}/{normalize(file[0] + "/" + file[1])}.{file[2]}.{oargs["object_extension"]} {file[0]}/{file[1]}.{file[2]}'
 
 		result = {
 		 "result": COMPILATION_STATUS_COMPILING,
@@ -1027,14 +1048,12 @@ def link(settings: dict, status: dict) -> None:
 	else:
 		command = f'{lexe} {largs} {output_linker} {epn} {lib_paths}'
 
-	for path, subdirs, files in os.walk(obj_dir):
-		for name in files:
-			file = parse_file_path(name)
-			if (file[2] != oargs["object_extension"]):
-				continue
-			obj_name: str = "".join(file[0].split("/"))
+	for name in settings[SETTING_SOURCE_FILES]:
+		file = parse_file_path(name)
+		if file[2] not in SOURCE_FILES_EXTENSIONS:
+			continue
 
-			command += f' {obj_dir}/{obj_name}{file[1]}.{oargs["object_extension"]}'
+		command += f' {obj_dir}/{normalize(file[0] + "/" + file[1])}.{file[2]}.{oargs["object_extension"]}'
 
 	if settings[SETTING_TARGET] in STATIC_TARGETS:
 		command += libnames
@@ -1109,7 +1128,7 @@ def create_makefile():
 
 	# I use the normal pipeline to get all the files to compile, but I use an empty dict to simulate a clean compilation
 	hashes: dict = {}
-	calculate_new_hashes({}, hashes)
+	recalculate_old_hashes({}, hashes)
 
 	# get the file needed to compile
 	to_compile = get_to_compile(generic_settings[SETTING_SOURCE_FILES], {}, hashes, generic_settings[SETTING_SEMAPHORE], generic_settings[SETTING_CARGS] + generic_settings[SETTING_INCLUDES])
@@ -1263,6 +1282,7 @@ def main():
 	compilation_profile = parse_profile_name(args)
 
 	# settings is garanteted to have all of the necessary values
+	# this also changes the directory to the specified project dir
 	settings = parse_config_file(compilation_profile)
 
 	# need to remove it else the next for loop will see it and recognize it
@@ -1324,9 +1344,6 @@ def main():
 		print(HELP)
 		exit(1)
 
-	# script are executed from the project path
-	os.chdir(settings[SETTING_PROJECT_PATH])
-
 	if settings[SETTING_SCRIPTS]["pre"] != "":
 		print(COLS.FG_GREEN, " --- Pre Script ---", COLS.RESET)
 		exe_script("pre", settings)
@@ -1345,7 +1362,8 @@ def main():
 
 	new_hashes: dict = {}
 	# obtain new hashes
-	calculate_new_hashes(old_hashes, new_hashes)
+	recalculate_old_hashes(old_hashes, new_hashes)
+	new_hashes[CONFIG_FILENAME] = get_hash_of_file(CONFIG_FILE_ABSOLUTE_PATH)
 
 	full_args = settings[SETTING_CARGS] + join_arg_list(settings[SETTING_INCLUDES], settings[SETTING_SPECIFICS]["include_path"])
 
@@ -1353,23 +1371,22 @@ def main():
 	to_compile = get_to_compile(settings[SETTING_SOURCE_FILES], old_hashes, new_hashes, settings[SETTING_SEMAPHORE], full_args)
 
 	# if to_compile is empty, no need to do anything
+	link_only = False
 	if not to_compile:
-		print(f"{COLS.FG_YELLOW} --- Compilation and linking skipped due to no new or modified files ---{COLS.RESET}")
-		return
+		print(f"{COLS.FG_YELLOW} --- Compilation skipped due to no new or modified files ---{COLS.RESET}")
+		link_only = True
 
 	if not os.path.exists(settings[SETTING_OBJECTS_PATH]):
 		os.makedirs(settings[SETTING_OBJECTS_PATH])
 
 	# manages compilation and printing
-	compile_and_command(to_compile, settings)
+	compile_and_command(to_compile, settings, link_only)
 
 	if settings[SETTING_SCRIPTS]["post"] != "":
 		print("\n", COLS.FG_GREEN, " --- Post Script ---", COLS.RESET)
 		exe_script("post", settings)
 
-	# do not overwrite the old hashes
-	if not compile_all:
-		save_new_hashes(new_hashes, hash_path)
+	save_new_hashes(new_hashes, hash_path)
 
 
 if __name__ == "__main__":
